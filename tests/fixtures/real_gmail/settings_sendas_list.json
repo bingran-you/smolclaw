@@ -1,0 +1,12 @@
+{
+  "sendAs": [
+    {
+      "sendAsEmail": "mediar.acc1@gmail.com",
+      "displayName": "",
+      "replyToAddress": "",
+      "signature": "",
+      "isPrimary": true,
+      "isDefault": true
+    }
+  ]
+}

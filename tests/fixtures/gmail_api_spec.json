@@ -1,0 +1,277 @@
+{
+  "resources": {
+    "Profile": {
+      "endpoints": [
+        {"id": "gmail.users.getProfile", "method": "GET", "path": "/users/{userId}/profile"}
+      ]
+    },
+    "Messages": {
+      "endpoints": [
+        {"id": "gmail.users.messages.list", "method": "GET", "path": "/users/{userId}/messages"},
+        {"id": "gmail.users.messages.get", "method": "GET", "path": "/users/{userId}/messages/{id}"},
+        {"id": "gmail.users.messages.insert", "method": "POST", "path": "/users/{userId}/messages"},
+        {"id": "gmail.users.messages.send", "method": "POST", "path": "/users/{userId}/messages/send"},
+        {"id": "gmail.users.messages.import", "method": "POST", "path": "/users/{userId}/messages/import"},
+        {"id": "gmail.users.messages.modify", "method": "POST", "path": "/users/{userId}/messages/{id}/modify"},
+        {"id": "gmail.users.messages.trash", "method": "POST", "path": "/users/{userId}/messages/{id}/trash"},
+        {"id": "gmail.users.messages.untrash", "method": "POST", "path": "/users/{userId}/messages/{id}/untrash"},
+        {"id": "gmail.users.messages.delete", "method": "DELETE", "path": "/users/{userId}/messages/{id}"},
+        {"id": "gmail.users.messages.batchModify", "method": "POST", "path": "/users/{userId}/messages/batchModify"},
+        {"id": "gmail.users.messages.batchDelete", "method": "POST", "path": "/users/{userId}/messages/batchDelete"}
+      ]
+    },
+    "Attachments": {
+      "endpoints": [
+        {"id": "gmail.users.messages.attachments.get", "method": "GET", "path": "/users/{userId}/messages/{messageId}/attachments/{id}"}
+      ]
+    },
+    "Threads": {
+      "endpoints": [
+        {"id": "gmail.users.threads.list", "method": "GET", "path": "/users/{userId}/threads"},
+        {"id": "gmail.users.threads.get", "method": "GET", "path": "/users/{userId}/threads/{id}"},
+        {"id": "gmail.users.threads.modify", "method": "POST", "path": "/users/{userId}/threads/{id}/modify"},
+        {"id": "gmail.users.threads.trash", "method": "POST", "path": "/users/{userId}/threads/{id}/trash"},
+        {"id": "gmail.users.threads.untrash", "method": "POST", "path": "/users/{userId}/threads/{id}/untrash"},
+        {"id": "gmail.users.threads.delete", "method": "DELETE", "path": "/users/{userId}/threads/{id}"}
+      ]
+    },
+    "Labels": {
+      "endpoints": [
+        {"id": "gmail.users.labels.list", "method": "GET", "path": "/users/{userId}/labels"},
+        {"id": "gmail.users.labels.get", "method": "GET", "path": "/users/{userId}/labels/{id}"},
+        {"id": "gmail.users.labels.create", "method": "POST", "path": "/users/{userId}/labels"},
+        {"id": "gmail.users.labels.update", "method": "PUT", "path": "/users/{userId}/labels/{id}"},
+        {"id": "gmail.users.labels.patch", "method": "PATCH", "path": "/users/{userId}/labels/{id}"},
+        {"id": "gmail.users.labels.delete", "method": "DELETE", "path": "/users/{userId}/labels/{id}"}
+      ]
+    },
+    "Drafts": {
+      "endpoints": [
+        {"id": "gmail.users.drafts.list", "method": "GET", "path": "/users/{userId}/drafts"},
+        {"id": "gmail.users.drafts.get", "method": "GET", "path": "/users/{userId}/drafts/{id}"},
+        {"id": "gmail.users.drafts.create", "method": "POST", "path": "/users/{userId}/drafts"},
+        {"id": "gmail.users.drafts.update", "method": "PUT", "path": "/users/{userId}/drafts/{id}"},
+        {"id": "gmail.users.drafts.send", "method": "POST", "path": "/users/{userId}/drafts/send"},
+        {"id": "gmail.users.drafts.delete", "method": "DELETE", "path": "/users/{userId}/drafts/{id}"}
+      ]
+    },
+    "History": {
+      "endpoints": [
+        {"id": "gmail.users.history.list", "method": "GET", "path": "/users/{userId}/history"}
+      ]
+    },
+    "Watch/Stop": {
+      "endpoints": [
+        {"id": "gmail.users.watch", "method": "POST", "path": "/users/{userId}/watch"},
+        {"id": "gmail.users.stop", "method": "POST", "path": "/users/{userId}/stop"}
+      ]
+    },
+    "Settings/SendAs": {
+      "endpoints": [
+        {"id": "gmail.users.settings.sendAs.list", "method": "GET", "path": "/users/{userId}/settings/sendAs"},
+        {"id": "gmail.users.settings.sendAs.get", "method": "GET", "path": "/users/{userId}/settings/sendAs/{sendAsEmail}"},
+        {"id": "gmail.users.settings.sendAs.create", "method": "POST", "path": "/users/{userId}/settings/sendAs"},
+        {"id": "gmail.users.settings.sendAs.update", "method": "PUT", "path": "/users/{userId}/settings/sendAs/{sendAsEmail}"},
+        {"id": "gmail.users.settings.sendAs.delete", "method": "DELETE", "path": "/users/{userId}/settings/sendAs/{sendAsEmail}"},
+        {"id": "gmail.users.settings.sendAs.verify", "method": "POST", "path": "/users/{userId}/settings/sendAs/{sendAsEmail}/verify"}
+      ]
+    },
+    "Settings/Filters": {
+      "endpoints": [
+        {"id": "gmail.users.settings.filters.list", "method": "GET", "path": "/users/{userId}/settings/filters"},
+        {"id": "gmail.users.settings.filters.get", "method": "GET", "path": "/users/{userId}/settings/filters/{id}"},
+        {"id": "gmail.users.settings.filters.create", "method": "POST", "path": "/users/{userId}/settings/filters"},
+        {"id": "gmail.users.settings.filters.delete", "method": "DELETE", "path": "/users/{userId}/settings/filters/{id}"}
+      ]
+    },
+    "Settings/Forwarding": {
+      "endpoints": [
+        {"id": "gmail.users.settings.forwardingAddresses.list", "method": "GET", "path": "/users/{userId}/settings/forwardingAddresses"},
+        {"id": "gmail.users.settings.forwardingAddresses.get", "method": "GET", "path": "/users/{userId}/settings/forwardingAddresses/{forwardingEmail}"},
+        {"id": "gmail.users.settings.forwardingAddresses.create", "method": "POST", "path": "/users/{userId}/settings/forwardingAddresses"},
+        {"id": "gmail.users.settings.forwardingAddresses.delete", "method": "DELETE", "path": "/users/{userId}/settings/forwardingAddresses/{forwardingEmail}"}
+      ]
+    },
+    "Settings/Delegates": {
+      "endpoints": [
+        {"id": "gmail.users.settings.delegates.list", "method": "GET", "path": "/users/{userId}/settings/delegates"},
+        {"id": "gmail.users.settings.delegates.get", "method": "GET", "path": "/users/{userId}/settings/delegates/{delegateEmail}"},
+        {"id": "gmail.users.settings.delegates.create", "method": "POST", "path": "/users/{userId}/settings/delegates"},
+        {"id": "gmail.users.settings.delegates.delete", "method": "DELETE", "path": "/users/{userId}/settings/delegates/{delegateEmail}"}
+      ]
+    },
+    "Settings/Vacation": {
+      "endpoints": [
+        {"id": "gmail.users.settings.getVacation", "method": "GET", "path": "/users/{userId}/settings/vacation"},
+        {"id": "gmail.users.settings.updateVacation", "method": "PUT", "path": "/users/{userId}/settings/vacation"}
+      ]
+    },
+    "Settings/AutoForward": {
+      "endpoints": [
+        {"id": "gmail.users.settings.getAutoForwarding", "method": "GET", "path": "/users/{userId}/settings/autoForwarding"},
+        {"id": "gmail.users.settings.updateAutoForwarding", "method": "PUT", "path": "/users/{userId}/settings/autoForwarding"}
+      ]
+    },
+    "Settings/IMAP": {
+      "endpoints": [
+        {"id": "gmail.users.settings.getImap", "method": "GET", "path": "/users/{userId}/settings/imap"},
+        {"id": "gmail.users.settings.updateImap", "method": "PUT", "path": "/users/{userId}/settings/imap"}
+      ]
+    },
+    "Settings/POP": {
+      "endpoints": [
+        {"id": "gmail.users.settings.getPop", "method": "GET", "path": "/users/{userId}/settings/pop"},
+        {"id": "gmail.users.settings.updatePop", "method": "PUT", "path": "/users/{userId}/settings/pop"}
+      ]
+    },
+    "Settings/Language": {
+      "endpoints": [
+        {"id": "gmail.users.settings.getLanguage", "method": "GET", "path": "/users/{userId}/settings/language"},
+        {"id": "gmail.users.settings.updateLanguage", "method": "PUT", "path": "/users/{userId}/settings/language"}
+      ]
+    },
+    "Settings/CSE": {
+      "endpoints": [
+        {"id": "gmail.users.settings.cse.identities.list", "method": "GET", "path": "/users/{userId}/settings/cse/identities"},
+        {"id": "gmail.users.settings.cse.identities.get", "method": "GET", "path": "/users/{userId}/settings/cse/identities/{cseIdentityId}"},
+        {"id": "gmail.users.settings.cse.identities.create", "method": "POST", "path": "/users/{userId}/settings/cse/identities"},
+        {"id": "gmail.users.settings.cse.keypairs.list", "method": "GET", "path": "/users/{userId}/settings/cse/keypairs"},
+        {"id": "gmail.users.settings.cse.keypairs.get", "method": "GET", "path": "/users/{userId}/settings/cse/keypairs/{cseKeyPairId}"}
+      ]
+    }
+  },
+  "schemas": {
+    "Profile": {
+      "emailAddress": "string",
+      "messagesTotal": "integer",
+      "threadsTotal": "integer",
+      "historyId": "string"
+    },
+    "Message": {
+      "id": "string",
+      "threadId": "string",
+      "labelIds": "array",
+      "snippet": "string",
+      "historyId": "string",
+      "internalDate": "string",
+      "payload": "MessagePart",
+      "sizeEstimate": "integer",
+      "raw": "string"
+    },
+    "MessagePart": {
+      "partId": "string",
+      "mimeType": "string",
+      "filename": "string",
+      "headers": "array",
+      "body": "MessagePartBody",
+      "parts": "array"
+    },
+    "MessagePartBody": {
+      "attachmentId": "string",
+      "size": "integer",
+      "data": "string"
+    },
+    "Header": {
+      "name": "string",
+      "value": "string"
+    },
+    "Label": {
+      "id": "string",
+      "name": "string",
+      "type": "string",
+      "messageListVisibility": "string",
+      "labelListVisibility": "string",
+      "messagesTotal": "integer",
+      "messagesUnread": "integer",
+      "threadsTotal": "integer",
+      "threadsUnread": "integer",
+      "color": "LabelColor"
+    },
+    "Thread": {
+      "id": "string",
+      "historyId": "string",
+      "snippet": "string",
+      "messages": "array"
+    },
+    "Draft": {
+      "id": "string",
+      "message": "Message"
+    },
+    "HistoryEntry": {
+      "id": "string",
+      "messages": "array",
+      "messagesAdded": "array",
+      "messagesDeleted": "array",
+      "labelsAdded": "array",
+      "labelsRemoved": "array"
+    },
+    "Filter": {
+      "id": "string",
+      "criteria": "FilterCriteria",
+      "action": "FilterAction"
+    },
+    "FilterCriteria": {
+      "from": "string",
+      "to": "string",
+      "subject": "string",
+      "query": "string",
+      "hasAttachment": "boolean",
+      "negatedQuery": "string",
+      "excludeChats": "boolean",
+      "size": "integer",
+      "sizeComparison": "string"
+    },
+    "FilterAction": {
+      "addLabelIds": "array",
+      "removeLabelIds": "array",
+      "forward": "string"
+    },
+    "SendAs": {
+      "sendAsEmail": "string",
+      "displayName": "string",
+      "replyToAddress": "string",
+      "signature": "string",
+      "isPrimary": "boolean",
+      "isDefault": "boolean",
+      "treatAsAlias": "boolean",
+      "verificationStatus": "string"
+    },
+    "ForwardingAddress": {
+      "forwardingEmail": "string",
+      "verificationStatus": "string"
+    },
+    "Delegate": {
+      "delegateEmail": "string",
+      "verificationStatus": "string"
+    },
+    "VacationSettings": {
+      "enableAutoReply": "boolean",
+      "responseSubject": "string",
+      "responseBodyHtml": "string",
+      "responseBodyPlainText": "string",
+      "restrictToContacts": "boolean",
+      "restrictToDomain": "boolean",
+      "startTime": "string",
+      "endTime": "string"
+    },
+    "AutoForwarding": {
+      "enabled": "boolean",
+      "emailAddress": "string",
+      "disposition": "string"
+    },
+    "ImapSettings": {
+      "enabled": "boolean",
+      "autoExpunge": "boolean",
+      "expungeBehavior": "string",
+      "maxFolderSize": "integer"
+    },
+    "PopSettings": {
+      "accessWindow": "string",
+      "disposition": "string"
+    },
+    "LanguageSettings": {
+      "displayLanguage": "string"
+    }
+  },
+  "total_endpoints": 67
+}

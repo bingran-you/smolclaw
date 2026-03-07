@@ -1,0 +1,61 @@
+{
+  "id": "r-1923500557234846504",
+  "message": {
+    "id": "19ca70e6566e238e",
+    "threadId": "19ca70e6566e238e",
+    "labelIds": [
+      "DRAFT"
+    ],
+    "snippet": "Draft fixture test.",
+    "payload": {
+      "partId": "",
+      "mimeType": "text/plain",
+      "filename": "",
+      "headers": [
+        {
+          "name": "Received",
+          "value": "from 549629853672 named unknown by gmailapi.google.com with HTTPREST; Sat, 28 Feb 2026 19:41:04 -0600"
+        },
+        {
+          "name": "Content-Type",
+          "value": "text/plain; charset=\"us-ascii\""
+        },
+        {
+          "name": "MIME-Version",
+          "value": "1.0"
+        },
+        {
+          "name": "Content-Transfer-Encoding",
+          "value": "7bit"
+        },
+        {
+          "name": "To",
+          "value": "mediar.acc1@gmail.com"
+        },
+        {
+          "name": "Subject",
+          "value": "Draft Fixture Test"
+        },
+        {
+          "name": "Date",
+          "value": "Sat, 28 Feb 2026 19:41:04 -0600"
+        },
+        {
+          "name": "Message-Id",
+          "value": "<CA+oLZ03bkKA0Bmfhgm1L=WrCSqftk_EjXnHYwyM6EpSXqpfe+w@mail.gmail.com>"
+        },
+        {
+          "name": "From",
+          "value": "mediar.acc1@gmail.com"
+        }
+      ],
+      "body": {
+        "size": 19,
+        "data": "RHJhZnQgZml4dHVyZSB0ZXN0Lg=="
+      }
+    },
+    "sizeEstimate": 446,
+    "historyId": "2211",
+    "internalDate": "1772329264000"
+  }
+}

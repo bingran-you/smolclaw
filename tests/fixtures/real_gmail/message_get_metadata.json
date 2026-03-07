@@ -1,0 +1,126 @@
+{
+  "id": "19ca70b1983d03ce",
+  "threadId": "19ca7094745ea571",
+  "labelIds": [
+    "UNREAD",
+    "CATEGORY_UPDATES",
+    "INBOX"
+  ],
+  "snippet": "A new sign-in on Apple iPhone 16 Pro mediar.acc1@gmail.com We noticed a new sign-in to your Google Account on a Apple iPhone 16 Pro device. If this was you, you don&#39;t need to do anything. If not,",
+  "payload": {
+    "mimeType": "multipart/alternative",
+    "headers": [
+      {
+        "name": "Delivered-To",
+        "value": "mediar.acc1@gmail.com"
+      },
+      {
+        "name": "Received",
+        "value": "by 2002:a17:907:9707:b0:b90:2ade:47d5 with SMTP id jg7csp991417ejc;        Sat, 28 Feb 2026 17:37:28 -0800 (PST)"
+      },
+      {
+        "name": "X-Received",
+        "value": "by 2002:a05:6820:2905:b0:676:a740:89f0 with SMTP id 006d021491bc7-679fae0a4b9mr5231196eaf.23.1772329048144;        Sat, 28 Feb 2026 17:37:28 -0800 (PST)"
+      },
+      {
+        "name": "ARC-Seal",
+        "value": "i=1; a=rsa-sha256; t=1772329048; cv=none;        d=google.com; s=arc-20240605;        b=Qcox3kMlWHN7+epyRlQ2+lQ0nw5LFQokBwMg6cVDQOc5Ta7lryVRV8p+UUURZRxyTc         aBp4Ol1vkrfCxtHbacnKRl6IWrRskxT1CxT69XulbuBWpd9WRpMaut/dxsxvk+Y3k4Cf         a1NTZ49dpmWBBhcoG1+TJOJ7LIRM2n5d/ixzKm6UFYYtPK+zXm79jg+TqU5n9pRi+GnQ         5ldbJUJ0l5y0nFHP0QUiN9tw9r6dRhztvdwYtW6OYO4zt2Ca/7HEaYJm01YFoEJt+T2q         6R17u/8zBomWGbXJpdIJJIWVTCQdkkHRdoj6HwkmKt+d2UtyW+mZ14QT6mteFDeD+d6I         bRng=="
+      },
+      {
+        "name": "ARC-Message-Signature",
+        "value": "i=1; a=rsa-sha256; c=relaxed/relaxed; d=google.com; s=arc-20240605;        h=to:from:subject:message-id:gmsai:feedback-id:date:mime-version         :dkim-signature;        bh=G3x89ufb3KQuEoY2N0j9yu3ZWMATh+XxA04zvjsYfSc=;        fh=09/5idjjz20vqANtoHnceckqHLS4K6opLvJjCLfGud8=;        b=PpASw2kRiDFFckBhf2B7tvFRUmBlYigRSuREZWRKH2Vc9puqPWJoGwRaLBcox/Sitn         efw1C7NU/rL2AsXDgtsWwkpZqbO7ZuJIIG5mu9AdvGA0RzipgwCtYW2i17Pgbb6T4IXv         GeRv+2AoViGBEir5P+SNNVNE1ClSA7/KBYq9DQ8W+qfToYMbAYLqUFir5SnaiCzDUtXN         hzEnLsTGnQnk3icbqD+3J9BGwp2LXdm5eKZYchIPzz2C9dAVfHtmhjmDGTERxJQRi1ny         d2W+gTsYxa7J+8QBEVsvzbmLyA7O9d/9suBBxYnlPH+JSzqlWKyHGXoJHzFWFJcziXsh         aj3Q==;        dara=google.com"
+      },
+      {
+        "name": "ARC-Authentication-Results",
+        "value": "i=1; mx.google.com;       dkim=pass header.i=@accounts.google.com header.s=20230601 header.b=kwPpFu0j;       spf=pass (google.com: domain of 3v5ijaqgtc2ovw-zmxtgikkwcvba.owwotm.kwuumlqiz.ikkjouiqt.kwu@gaia.bounces.google.com designates 209.85.220.73 as permitted sender) smtp.mailfrom=3V5ijaQgTC2oVW-ZMXTgIKKWcVba.OWWOTM.KWUUMLQIZ.IKKjOUIQT.KWU@gaia.bounces.google.com;       dmarc=pass (p=REJECT sp=REJECT dis=NONE) header.from=accounts.google.com;       dara=pass header.i=@gmail.com"
+      },
+      {
+        "name": "Return-Path",
+        "value": "<3V5ijaQgTC2oVW-ZMXTgIKKWcVba.OWWOTM.KWUUMLQIZ.IKKjOUIQT.KWU@gaia.bounces.google.com>"
+      },
+      {
+        "name": "Received",
+        "value": "from mail-sor-f73.google.com (mail-sor-f73.google.com. [209.85.220.73])        by mx.google.com with SMTPS id 006d021491bc7-67a05df8102sor966855eaf.0.2026.02.28.17.37.28        for <mediar.acc1@gmail.com>        (Google Transport Security);        Sat, 28 Feb 2026 17:37:28 -0800 (PST)"
+      },
+      {
+        "name": "Received-SPF",
+        "value": "pass (google.com: domain of 3v5ijaqgtc2ovw-zmxtgikkwcvba.owwotm.kwuumlqiz.ikkjouiqt.kwu@gaia.bounces.google.com designates 209.85.220.73 as permitted sender) client-ip=209.85.220.73;"
+      },
+      {
+        "name": "Authentication-Results",
+        "value": "mx.google.com;       dkim=pass header.i=@accounts.google.com header.s=20230601 header.b=kwPpFu0j;       spf=pass (google.com: domain of 3v5ijaqgtc2ovw-zmxtgikkwcvba.owwotm.kwuumlqiz.ikkjouiqt.kwu@gaia.bounces.google.com designates 209.85.220.73 as permitted sender) smtp.mailfrom=3V5ijaQgTC2oVW-ZMXTgIKKWcVba.OWWOTM.KWUUMLQIZ.IKKjOUIQT.KWU@gaia.bounces.google.com;       dmarc=pass (p=REJECT sp=REJECT dis=NONE) header.from=accounts.google.com;       dara=pass header.i=@gmail.com"
+      },
+      {
+        "name": "DKIM-Signature",
+        "value": "v=1; a=rsa-sha256; c=relaxed/relaxed;        d=accounts.google.com; s=20230601; t=1772329048; x=1772933848; dara=google.com;        h=to:from:subject:message-id:gmsai:feedback-id:date:mime-version:from         :to:cc:subject:date:message-id:reply-to;        bh=G3x89ufb3KQuEoY2N0j9yu3ZWMATh+XxA04zvjsYfSc=;        b=kwPpFu0jMKFB8MZcBkURki8UygO70UJLIResHkb9tYR3rJCbGHMcNSEUJvDkxKCTx8         S9q6JjqzWgwXsugmQX4u4qMEb1Ut63oKXMEUZdr7OBmN5AhrLCWipmkm3ANugWbhNbMD         dhPZ7ZRNOXyyVZcChO3vNPPUJjflh3v5yucYXRMwDtHcI93KnS44RvzN8zXl3XJeLhlL         /bRCh17/g7szc5kSxrPYHoy1xLdAKnmJFgqFEmBA9+3X9UlnnwTTxFljkzjrXHXC5Y3V         1nlmCtzgM2Xe2q9Fgajqtlxx1qcQVthq7o+yd+RtJaUVrNfbAxBFXkN9YY8f2p8gWMZJ         Mp3g=="
+      },
+      {
+        "name": "X-Google-DKIM-Signature",
+        "value": "v=1; a=rsa-sha256; c=relaxed/relaxed;        d=1e100.net; s=20230601; t=1772329048; x=1772933848;        h=to:from:subject:message-id:gmsai:feedback-id:date:mime-version         :x-gm-message-state:from:to:cc:subject:date:message-id:reply-to;        bh=G3x89ufb3KQuEoY2N0j9yu3ZWMATh+XxA04zvjsYfSc=;        b=ACM1vaijWfviPDf8cn1mb2dL/Jn1hfA8R6vtvVcRBMrxHTJfEUpCZtSV+MakcDZ6Sf         HLCij4KMfw/iHKQb/e3/krJrQDepj9Q2LS/P9k10RQWujE+9/qkrlLUIBsM3twY1ogre         gZxBEH3+r1n45qBhSy5HnVvIx667zYVlxSPr3AgP4L4Aw0e1UBmpkbL5ly5pRbvOgMlL         cHUz+wKclyCbIwM0IUoYxM0nAX6MUi5wWjPm1Fe30dFw5jSdSO9OE7dA8VpkXWPAbleo         l5MTR1mWdzfS8fCrJLiNXV4igd+OtVzsxaHHhF65PTs3pBskbhXDih/q2J4FsiuyQRMK         ijhA=="
+      },
+      {
+        "name": "X-Gm-Message-State",
+        "value": "AOJu0YwIxOlmHM1uqd32xh40CYiBEhO3QpTa/puXIEWsDczpw8HvqlnK pJ3gz0Dtl+YuE5yCcSqHRXe2tm5h0bc3kgQmwrFoXFILmRi41EiCDDjTgKXVEeQlvyrqy0RR9nH ogzRt+EHXFGJFPf9xxKBhe0vU8M+IisgwYxae15Y="
+      },
+      {
+        "name": "MIME-Version",
+        "value": "1.0"
+      },
+      {
+        "name": "X-Received",
+        "value": "by 2002:a05:6820:c0c9:20b0:67a:61f:6464 with SMTP id 006d021491bc7-67a061f66c0mr1092802eaf.74.1772329047827; Sat, 28 Feb 2026 17:37:27 -0800 (PST)"
+      },
+      {
+        "name": "Date",
+        "value": "Sun, 01 Mar 2026 01:37:27 GMT"
+      },
+      {
+        "name": "X-Account-Notification-Type",
+        "value": "325"
+      },
+      {
+        "name": "Feedback-ID",
+        "value": "325:account-notifier"
+      },
+      {
+        "name": "gmsai",
+        "value": "true"
+      },
+      {
+        "name": "X-Google-Notification-Metadata",
+        "value": "CgISAA"
+      },
+      {
+        "name": "X-Notifications",
+        "value": "08fb4e8114d60000"
+      },
+      {
+        "name": "X-Notifications-Bounce-Info",
+        "value": "AXZ5ntqp4Inrp4KbVHGu553S7OsXXlVB5dDafw4jdGQzm_KDBAGb1rGIMl953EYdwc0te-2q2pNbzhnbdUFzcp-AOpz8OvEwswO0eOiSLitBCP8Nw2QBUhnMNfkXmjQbZEJ1pnxufky4Kp2ZjX7j-LOr0Ha0iaVDrVlCT3f5ZCQ9Nt1up6jcm0HGj_zlMLUrqNdRlLbX4NokGCpH8I6orfaQ70oVB5NOkoRBjEn6mQNjAwNjA0MDQxNTM1NTk2OTMzMg"
+      },
+      {
+        "name": "Message-ID",
+        "value": "<h6T_6By_-CSHmVTph92_ZA@notifications.google.com>"
+      },
+      {
+        "name": "Subject",
+        "value": "Security alert"
+      },
+      {
+        "name": "From",
+        "value": "Google <no-reply@accounts.google.com>"
+      },
+      {
+        "name": "To",
+        "value": "mediar.acc1@gmail.com"
+      },
+      {
+        "name": "Content-Type",
+        "value": "multipart/alternative; boundary=\"000000000000522349064bec83f2\""
+      }
+    ]
+  },
+  "sizeEstimate": 12372,
+  "historyId": "1976",
+  "internalDate": "1772329047000"
+}

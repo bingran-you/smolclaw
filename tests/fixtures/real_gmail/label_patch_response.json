@@ -1,0 +1,11 @@
+{
+  "id": "Label_1",
+  "name": "MockTestLabelPatched",
+  "messageListVisibility": "show",
+  "labelListVisibility": "labelShow",
+  "type": "user",
+  "messagesTotal": 0,
+  "messagesUnread": 0,
+  "threadsTotal": 0,
+  "threadsUnread": 0
+}

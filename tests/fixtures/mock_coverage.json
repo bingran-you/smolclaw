@@ -1,0 +1,776 @@
+{
+  "endpoints": [
+    {
+      "id": "gmail.users.getProfile",
+      "resource": "Profile",
+      "method": "GET",
+      "path": "/users/{userId}/profile",
+      "implemented": true,
+      "fixture": "profile.json",
+      "tests": [
+        "tests/test_api.py::TestProfile::test_get_profile",
+        "tests/test_conformance.py::TestProfileConformance::test_profile_keys"
+      ]
+    },
+    {
+      "id": "gmail.users.messages.list",
+      "resource": "Messages",
+      "method": "GET",
+      "path": "/users/{userId}/messages",
+      "implemented": true,
+      "fixture": "messages_list.json",
+      "tests": [
+        "tests/test_api.py::TestMessages::test_list_messages",
+        "tests/test_api.py::TestMessages::test_list_with_search",
+        "tests/test_conformance.py::TestMessagesConformance::test_messages_list_structure"
+      ]
+    },
+    {
+      "id": "gmail.users.messages.get",
+      "resource": "Messages",
+      "method": "GET",
+      "path": "/users/{userId}/messages/{id}",
+      "implemented": true,
+      "fixture": "message_get_full.json",
+      "tests": [
+        "tests/test_api.py::TestMessages::test_get_message",
+        "tests/test_api.py::TestMessages::test_get_message_not_found",
+        "tests/test_api.py::TestMessages::test_get_message_format_raw",
+        "tests/test_api.py::TestMessages::test_get_message_format_metadata",
+        "tests/test_api.py::TestMessages::test_get_message_has_history_id",
+        "tests/test_api.py::TestMessages::test_get_message_date_rfc2822_format",
+        "tests/test_conformance.py::TestMessagesConformance::test_get_full_has_payload",
+        "tests/test_conformance.py::TestMessagesConformance::test_get_raw_omits_payload",
+        "tests/test_conformance.py::TestMessagesConformance::test_get_minimal_keys"
+      ]
+    },
+    {
+      "id": "gmail.users.messages.insert",
+      "resource": "Messages",
+      "method": "POST",
+      "path": "/users/{userId}/messages",
+      "implemented": true,
+      "fixture": null,
+      "tests": [
+        "tests/test_api.py::TestMessages::test_insert_message"
+      ]
+    },
+    {
+      "id": "gmail.users.messages.send",
+      "resource": "Messages",
+      "method": "POST",
+      "path": "/users/{userId}/messages/send",
+      "implemented": true,
+      "fixture": "message_send_response.json",
+      "tests": [
+        "tests/test_api.py::TestMessages::test_send_message",
+        "tests/test_api.py::TestMessages::test_send_with_raw",
+        "tests/test_conformance.py::TestMessagesConformance::test_send_returns_minimal"
+      ]
+    },
+    {
+      "id": "gmail.users.messages.import",
+      "resource": "Messages",
+      "method": "POST",
+      "path": "/users/{userId}/messages/import",
+      "implemented": true,
+      "fixture": null,
+      "tests": [
+        "tests/test_api.py::TestMessages::test_import_message"
+      ]
+    },
+    {
+      "id": "gmail.users.messages.modify",
+      "resource": "Messages",
+      "method": "POST",
+      "path": "/users/{userId}/messages/{id}/modify",
+      "implemented": true,
+      "fixture": "message_modify_response.json",
+      "tests": [
+        "tests/test_api.py::TestMessages::test_modify_message_mark_read",
+        "tests/test_api.py::TestMessages::test_modify_message_star",
+        "tests/test_conformance.py::TestMessagesConformance::test_modify_returns_minimal"
+      ]
+    },
+    {
+      "id": "gmail.users.messages.trash",
+      "resource": "Messages",
+      "method": "POST",
+      "path": "/users/{userId}/messages/{id}/trash",
+      "implemented": true,
+      "fixture": "message_trash_response.json",
+      "tests": [
+        "tests/test_api.py::TestMessages::test_trash_message",
+        "tests/test_conformance.py::TestMessagesConformance::test_trash_returns_minimal"
+      ]
+    },
+    {
+      "id": "gmail.users.messages.untrash",
+      "resource": "Messages",
+      "method": "POST",
+      "path": "/users/{userId}/messages/{id}/untrash",
+      "implemented": true,
+      "fixture": "message_untrash_response.json",
+      "tests": [
+        "tests/test_api.py::TestMessages::test_untrash_message"
+      ]
+    },
+    {
+      "id": "gmail.users.messages.delete",
+      "resource": "Messages",
+      "method": "DELETE",
+      "path": "/users/{userId}/messages/{id}",
+      "implemented": true,
+      "fixture": null,
+      "tests": [
+        "tests/test_api.py::TestMessages::test_delete_message"
+      ]
+    },
+    {
+      "id": "gmail.users.messages.batchModify",
+      "resource": "Messages",
+      "method": "POST",
+      "path": "/users/{userId}/messages/batchModify",
+      "implemented": true,
+      "fixture": null,
+      "tests": [
+        "tests/test_api.py::TestMessages::test_batch_modify"
+      ]
+    },
+    {
+      "id": "gmail.users.messages.batchDelete",
+      "resource": "Messages",
+      "method": "POST",
+      "path": "/users/{userId}/messages/batchDelete",
+      "implemented": true,
+      "fixture": null,
+      "tests": [
+        "tests/test_api.py::TestMessagesBatchDelete::test_batch_delete"
+      ]
+    },
+    {
+      "id": "gmail.users.messages.attachments.get",
+      "resource": "Attachments",
+      "method": "GET",
+      "path": "/users/{userId}/messages/{messageId}/attachments/{id}",
+      "implemented": true,
+      "fixture": null,
+      "tests": [
+        "tests/test_api.py::TestAttachments::test_get_attachment",
+        "tests/test_api.py::TestAttachments::test_get_attachment_not_found"
+      ]
+    },
+    {
+      "id": "gmail.users.threads.list",
+      "resource": "Threads",
+      "method": "GET",
+      "path": "/users/{userId}/threads",
+      "implemented": true,
+      "fixture": "threads_list.json",
+      "tests": [
+        "tests/test_api.py::TestThreads::test_list_threads"
+      ]
+    },
+    {
+      "id": "gmail.users.threads.get",
+      "resource": "Threads",
+      "method": "GET",
+      "path": "/users/{userId}/threads/{id}",
+      "implemented": true,
+      "fixture": "thread_get_full.json",
+      "tests": [
+        "tests/test_api.py::TestThreads::test_get_thread",
+        "tests/test_conformance.py::TestThreadsConformance::test_thread_get_structure"
+      ]
+    },
+    {
+      "id": "gmail.users.threads.modify",
+      "resource": "Threads",
+      "method": "POST",
+      "path": "/users/{userId}/threads/{id}/modify",
+      "implemented": true,
+      "fixture": null,
+      "tests": [
+        "tests/test_api.py::TestThreadsMutations::test_modify_thread",
+        "tests/test_api.py::TestThreadsMutations::test_modify_thread_remove_label",
+        "tests/test_api.py::TestThreadsMutations::test_modify_thread_not_found"
+      ]
+    },
+    {
+      "id": "gmail.users.threads.trash",
+      "resource": "Threads",
+      "method": "POST",
+      "path": "/users/{userId}/threads/{id}/trash",
+      "implemented": true,
+      "fixture": null,
+      "tests": [
+        "tests/test_api.py::TestThreadsMutations::test_trash_thread"
+      ]
+    },
+    {
+      "id": "gmail.users.threads.untrash",
+      "resource": "Threads",
+      "method": "POST",
+      "path": "/users/{userId}/threads/{id}/untrash",
+      "implemented": true,
+      "fixture": null,
+      "tests": [
+        "tests/test_api.py::TestThreadsMutations::test_untrash_thread"
+      ]
+    },
+    {
+      "id": "gmail.users.threads.delete",
+      "resource": "Threads",
+      "method": "DELETE",
+      "path": "/users/{userId}/threads/{id}",
+      "implemented": true,
+      "fixture": null,
+      "tests": [
+        "tests/test_api.py::TestThreadsMutations::test_delete_thread",
+        "tests/test_api.py::TestThreadsMutations::test_delete_thread_not_found"
+      ]
+    },
+    {
+      "id": "gmail.users.labels.list",
+      "resource": "Labels",
+      "method": "GET",
+      "path": "/users/{userId}/labels",
+      "implemented": true,
+      "fixture": "labels_list.json",
+      "tests": [
+        "tests/test_api.py::TestLabels::test_list_labels",
+        "tests/test_conformance.py::TestLabelsConformance::test_labels_list_structure",
+        "tests/test_conformance.py::TestLabelsConformance::test_chat_label_exists",
+        "tests/test_conformance.py::TestLabelsConformance::test_system_label_visibility_patterns",
+        "tests/test_conformance.py::TestLabelsConformance::test_labels_list_omits_counts"
+      ]
+    },
+    {
+      "id": "gmail.users.labels.get",
+      "resource": "Labels",
+      "method": "GET",
+      "path": "/users/{userId}/labels/{id}",
+      "implemented": true,
+      "fixture": "label_get_inbox.json",
+      "tests": [
+        "tests/test_api.py::TestLabelsExtended::test_get_label",
+        "tests/test_api.py::TestLabelsExtended::test_get_label_not_found"
+      ]
+    },
+    {
+      "id": "gmail.users.labels.create",
+      "resource": "Labels",
+      "method": "POST",
+      "path": "/users/{userId}/labels",
+      "implemented": true,
+      "fixture": "label_create_response.json",
+      "tests": [
+        "tests/test_api.py::TestLabels::test_create_label"
+      ]
+    },
+    {
+      "id": "gmail.users.labels.update",
+      "resource": "Labels",
+      "method": "PUT",
+      "path": "/users/{userId}/labels/{id}",
+      "implemented": true,
+      "fixture": "label_update_response.json",
+      "tests": [
+        "tests/test_api.py::TestLabelsExtended::test_update_label",
+        "tests/test_api.py::TestLabelsExtended::test_update_system_label_fails"
+      ]
+    },
+    {
+      "id": "gmail.users.labels.patch",
+      "resource": "Labels",
+      "method": "PATCH",
+      "path": "/users/{userId}/labels/{id}",
+      "implemented": true,
+      "fixture": "label_patch_response.json",
+      "tests": [
+        "tests/test_api.py::TestLabelsExtended::test_patch_label",
+        "tests/test_api.py::TestLabelsExtended::test_patch_label_not_found"
+      ]
+    },
+    {
+      "id": "gmail.users.labels.delete",
+      "resource": "Labels",
+      "method": "DELETE",
+      "path": "/users/{userId}/labels/{id}",
+      "implemented": true,
+      "fixture": null,
+      "tests": [
+        "tests/test_api.py::TestLabels::test_delete_label",
+        "tests/test_api.py::TestLabels::test_cannot_delete_system_label"
+      ]
+    },
+    {
+      "id": "gmail.users.drafts.list",
+      "resource": "Drafts",
+      "method": "GET",
+      "path": "/users/{userId}/drafts",
+      "implemented": true,
+      "fixture": "drafts_list.json",
+      "tests": [
+        "tests/test_api.py::TestDrafts::test_list_drafts"
+      ]
+    },
+    {
+      "id": "gmail.users.drafts.get",
+      "resource": "Drafts",
+      "method": "GET",
+      "path": "/users/{userId}/drafts/{id}",
+      "implemented": true,
+      "fixture": "draft_get_response.json",
+      "tests": [
+        "tests/test_api.py::TestDraftsExtended::test_get_draft",
+        "tests/test_api.py::TestDraftsExtended::test_get_draft_not_found"
+      ]
+    },
+    {
+      "id": "gmail.users.drafts.create",
+      "resource": "Drafts",
+      "method": "POST",
+      "path": "/users/{userId}/drafts",
+      "implemented": true,
+      "fixture": "draft_create_response.json",
+      "tests": [
+        "tests/test_api.py::TestDrafts::test_create_draft",
+        "tests/test_conformance.py::TestDraftsConformance::test_draft_create_returns_minimal_message"
+      ]
+    },
+    {
+      "id": "gmail.users.drafts.update",
+      "resource": "Drafts",
+      "method": "PUT",
+      "path": "/users/{userId}/drafts/{id}",
+      "implemented": true,
+      "fixture": null,
+      "tests": [
+        "tests/test_api.py::TestDraftsExtended::test_update_draft",
+        "tests/test_api.py::TestDraftsExtended::test_update_draft_not_found"
+      ]
+    },
+    {
+      "id": "gmail.users.drafts.send",
+      "resource": "Drafts",
+      "method": "POST",
+      "path": "/users/{userId}/drafts/send",
+      "implemented": true,
+      "fixture": null,
+      "tests": [
+        "tests/test_api.py::TestDrafts::test_send_draft"
+      ]
+    },
+    {
+      "id": "gmail.users.drafts.delete",
+      "resource": "Drafts",
+      "method": "DELETE",
+      "path": "/users/{userId}/drafts/{id}",
+      "implemented": true,
+      "fixture": null,
+      "tests": [
+        "tests/test_api.py::TestDraftsExtended::test_delete_draft",
+        "tests/test_api.py::TestDraftsExtended::test_delete_draft_not_found"
+      ]
+    },
+    {
+      "id": "gmail.users.history.list",
+      "resource": "History",
+      "method": "GET",
+      "path": "/users/{userId}/history",
+      "implemented": true,
+      "fixture": "history_list.json",
+      "tests": [
+        "tests/test_api.py::TestHistory::test_list_history",
+        "tests/test_api.py::TestHistory::test_list_history_invalid_start_id"
+      ]
+    },
+    {
+      "id": "gmail.users.watch",
+      "resource": "Watch/Stop",
+      "method": "POST",
+      "path": "/users/{userId}/watch",
+      "implemented": true,
+      "fixture": null,
+      "tests": [
+        "tests/test_settings.py::TestWatchStop::test_watch"
+      ]
+    },
+    {
+      "id": "gmail.users.stop",
+      "resource": "Watch/Stop",
+      "method": "POST",
+      "path": "/users/{userId}/stop",
+      "implemented": true,
+      "fixture": null,
+      "tests": [
+        "tests/test_settings.py::TestWatchStop::test_stop"
+      ]
+    },
+    {
+      "id": "gmail.users.settings.sendAs.list",
+      "resource": "Settings/SendAs",
+      "method": "GET",
+      "path": "/users/{userId}/settings/sendAs",
+      "implemented": true,
+      "fixture": "settings_sendas_list.json",
+      "tests": [
+        "tests/test_settings.py::TestSendAs::test_list_send_as",
+        "tests/test_conformance.py::TestSettingsConformance::test_sendas_list_has_primary"
+      ]
+    },
+    {
+      "id": "gmail.users.settings.sendAs.get",
+      "resource": "Settings/SendAs",
+      "method": "GET",
+      "path": "/users/{userId}/settings/sendAs/{sendAsEmail}",
+      "implemented": true,
+      "fixture": null,
+      "tests": [
+        "tests/test_settings.py::TestSendAs::test_create_and_get_send_as"
+      ]
+    },
+    {
+      "id": "gmail.users.settings.sendAs.create",
+      "resource": "Settings/SendAs",
+      "method": "POST",
+      "path": "/users/{userId}/settings/sendAs",
+      "implemented": true,
+      "fixture": null,
+      "tests": [
+        "tests/test_settings.py::TestSendAs::test_create_and_get_send_as"
+      ]
+    },
+    {
+      "id": "gmail.users.settings.sendAs.update",
+      "resource": "Settings/SendAs",
+      "method": "PUT",
+      "path": "/users/{userId}/settings/sendAs/{sendAsEmail}",
+      "implemented": true,
+      "fixture": null,
+      "tests": [
+        "tests/test_settings.py::TestSendAs::test_update_send_as"
+      ]
+    },
+    {
+      "id": "gmail.users.settings.sendAs.delete",
+      "resource": "Settings/SendAs",
+      "method": "DELETE",
+      "path": "/users/{userId}/settings/sendAs/{sendAsEmail}",
+      "implemented": true,
+      "fixture": null,
+      "tests": [
+        "tests/test_settings.py::TestSendAs::test_delete_send_as",
+        "tests/test_settings.py::TestSendAs::test_cannot_delete_primary"
+      ]
+    },
+    {
+      "id": "gmail.users.settings.sendAs.verify",
+      "resource": "Settings/SendAs",
+      "method": "POST",
+      "path": "/users/{userId}/settings/sendAs/{sendAsEmail}/verify",
+      "implemented": true,
+      "fixture": null,
+      "tests": [
+        "tests/test_settings.py::TestSendAs::test_verify_send_as"
+      ]
+    },
+    {
+      "id": "gmail.users.settings.filters.list",
+      "resource": "Settings/Filters",
+      "method": "GET",
+      "path": "/users/{userId}/settings/filters",
+      "implemented": true,
+      "fixture": "settings_filters_list.json",
+      "tests": [
+        "tests/test_settings.py::TestFilters::test_list_filters_empty",
+        "tests/test_conformance.py::TestSettingsConformance::test_filters_list_empty_returns_empty_object"
+      ]
+    },
+    {
+      "id": "gmail.users.settings.filters.get",
+      "resource": "Settings/Filters",
+      "method": "GET",
+      "path": "/users/{userId}/settings/filters/{id}",
+      "implemented": true,
+      "fixture": null,
+      "tests": [
+        "tests/test_settings.py::TestFilters::test_create_and_get_filter"
+      ]
+    },
+    {
+      "id": "gmail.users.settings.filters.create",
+      "resource": "Settings/Filters",
+      "method": "POST",
+      "path": "/users/{userId}/settings/filters",
+      "implemented": true,
+      "fixture": null,
+      "tests": [
+        "tests/test_settings.py::TestFilters::test_create_and_get_filter"
+      ]
+    },
+    {
+      "id": "gmail.users.settings.filters.delete",
+      "resource": "Settings/Filters",
+      "method": "DELETE",
+      "path": "/users/{userId}/settings/filters/{id}",
+      "implemented": true,
+      "fixture": null,
+      "tests": [
+        "tests/test_settings.py::TestFilters::test_delete_filter"
+      ]
+    },
+    {
+      "id": "gmail.users.settings.forwardingAddresses.list",
+      "resource": "Settings/Forwarding",
+      "method": "GET",
+      "path": "/users/{userId}/settings/forwardingAddresses",
+      "implemented": true,
+      "fixture": "settings_forwarding_list.json",
+      "tests": [
+        "tests/test_settings.py::TestForwardingAddresses::test_list_empty",
+        "tests/test_conformance.py::TestSettingsConformance::test_forwarding_list_empty_returns_empty_object"
+      ]
+    },
+    {
+      "id": "gmail.users.settings.forwardingAddresses.get",
+      "resource": "Settings/Forwarding",
+      "method": "GET",
+      "path": "/users/{userId}/settings/forwardingAddresses/{forwardingEmail}",
+      "implemented": true,
+      "fixture": null,
+      "tests": [
+        "tests/test_settings.py::TestForwardingAddresses::test_create_and_get"
+      ]
+    },
+    {
+      "id": "gmail.users.settings.forwardingAddresses.create",
+      "resource": "Settings/Forwarding",
+      "method": "POST",
+      "path": "/users/{userId}/settings/forwardingAddresses",
+      "implemented": true,
+      "fixture": null,
+      "tests": [
+        "tests/test_settings.py::TestForwardingAddresses::test_create_and_get"
+      ]
+    },
+    {
+      "id": "gmail.users.settings.forwardingAddresses.delete",
+      "resource": "Settings/Forwarding",
+      "method": "DELETE",
+      "path": "/users/{userId}/settings/forwardingAddresses/{forwardingEmail}",
+      "implemented": true,
+      "fixture": null,
+      "tests": [
+        "tests/test_settings.py::TestForwardingAddresses::test_delete"
+      ]
+    },
+    {
+      "id": "gmail.users.settings.delegates.list",
+      "resource": "Settings/Delegates",
+      "method": "GET",
+      "path": "/users/{userId}/settings/delegates",
+      "implemented": true,
+      "fixture": null,
+      "tests": [
+        "tests/test_settings.py::TestDelegates::test_list_empty"
+      ]
+    },
+    {
+      "id": "gmail.users.settings.delegates.get",
+      "resource": "Settings/Delegates",
+      "method": "GET",
+      "path": "/users/{userId}/settings/delegates/{delegateEmail}",
+      "implemented": true,
+      "fixture": null,
+      "tests": [
+        "tests/test_settings.py::TestDelegates::test_create_and_get"
+      ]
+    },
+    {
+      "id": "gmail.users.settings.delegates.create",
+      "resource": "Settings/Delegates",
+      "method": "POST",
+      "path": "/users/{userId}/settings/delegates",
+      "implemented": true,
+      "fixture": null,
+      "tests": [
+        "tests/test_settings.py::TestDelegates::test_create_and_get"
+      ]
+    },
+    {
+      "id": "gmail.users.settings.delegates.delete",
+      "resource": "Settings/Delegates",
+      "method": "DELETE",
+      "path": "/users/{userId}/settings/delegates/{delegateEmail}",
+      "implemented": true,
+      "fixture": null,
+      "tests": [
+        "tests/test_settings.py::TestDelegates::test_delete"
+      ]
+    },
+    {
+      "id": "gmail.users.settings.getVacation",
+      "resource": "Settings/Vacation",
+      "method": "GET",
+      "path": "/users/{userId}/settings/vacation",
+      "implemented": true,
+      "fixture": "settings_vacation.json",
+      "tests": [
+        "tests/test_settings.py::TestVacation::test_get_default",
+        "tests/test_conformance.py::TestSettingsConformance::test_vacation_default_structure"
+      ]
+    },
+    {
+      "id": "gmail.users.settings.updateVacation",
+      "resource": "Settings/Vacation",
+      "method": "PUT",
+      "path": "/users/{userId}/settings/vacation",
+      "implemented": true,
+      "fixture": null,
+      "tests": [
+        "tests/test_settings.py::TestVacation::test_update"
+      ]
+    },
+    {
+      "id": "gmail.users.settings.getAutoForwarding",
+      "resource": "Settings/AutoForward",
+      "method": "GET",
+      "path": "/users/{userId}/settings/autoForwarding",
+      "implemented": true,
+      "fixture": "settings_autoforwarding.json",
+      "tests": [
+        "tests/test_settings.py::TestAutoForwarding::test_get_default",
+        "tests/test_conformance.py::TestSettingsConformance::test_autoforwarding_default_structure"
+      ]
+    },
+    {
+      "id": "gmail.users.settings.updateAutoForwarding",
+      "resource": "Settings/AutoForward",
+      "method": "PUT",
+      "path": "/users/{userId}/settings/autoForwarding",
+      "implemented": true,
+      "fixture": null,
+      "tests": [
+        "tests/test_settings.py::TestAutoForwarding::test_update"
+      ]
+    },
+    {
+      "id": "gmail.users.settings.getImap",
+      "resource": "Settings/IMAP",
+      "method": "GET",
+      "path": "/users/{userId}/settings/imap",
+      "implemented": true,
+      "fixture": null,
+      "tests": [
+        "tests/test_api.py::TestSettingsImap::test_get_imap_default"
+      ]
+    },
+    {
+      "id": "gmail.users.settings.updateImap",
+      "resource": "Settings/IMAP",
+      "method": "PUT",
+      "path": "/users/{userId}/settings/imap",
+      "implemented": true,
+      "fixture": null,
+      "tests": [
+        "tests/test_api.py::TestSettingsImap::test_update_imap"
+      ]
+    },
+    {
+      "id": "gmail.users.settings.getPop",
+      "resource": "Settings/POP",
+      "method": "GET",
+      "path": "/users/{userId}/settings/pop",
+      "implemented": true,
+      "fixture": null,
+      "tests": [
+        "tests/test_api.py::TestSettingsPop::test_get_pop_default"
+      ]
+    },
+    {
+      "id": "gmail.users.settings.updatePop",
+      "resource": "Settings/POP",
+      "method": "PUT",
+      "path": "/users/{userId}/settings/pop",
+      "implemented": true,
+      "fixture": null,
+      "tests": [
+        "tests/test_api.py::TestSettingsPop::test_update_pop"
+      ]
+    },
+    {
+      "id": "gmail.users.settings.getLanguage",
+      "resource": "Settings/Language",
+      "method": "GET",
+      "path": "/users/{userId}/settings/language",
+      "implemented": true,
+      "fixture": null,
+      "tests": [
+        "tests/test_api.py::TestSettingsLanguage::test_get_language_default"
+      ]
+    },
+    {
+      "id": "gmail.users.settings.updateLanguage",
+      "resource": "Settings/Language",
+      "method": "PUT",
+      "path": "/users/{userId}/settings/language",
+      "implemented": true,
+      "fixture": null,
+      "tests": [
+        "tests/test_api.py::TestSettingsLanguage::test_update_language"
+      ]
+    },
+    {
+      "id": "gmail.users.settings.cse.identities.list",
+      "resource": "Settings/CSE",
+      "method": "GET",
+      "path": "/users/{userId}/settings/cse/identities",
+      "implemented": false,
+      "fixture": null,
+      "tests": [],
+      "skip_reason": "Client-Side Encryption not relevant for testing"
+    },
+    {
+      "id": "gmail.users.settings.cse.identities.get",
+      "resource": "Settings/CSE",
+      "method": "GET",
+      "path": "/users/{userId}/settings/cse/identities/{cseIdentityId}",
+      "implemented": false,
+      "fixture": null,
+      "tests": [],
+      "skip_reason": "Client-Side Encryption not relevant for testing"
+    },
+    {
+      "id": "gmail.users.settings.cse.identities.create",
+      "resource": "Settings/CSE",
+      "method": "POST",
+      "path": "/users/{userId}/settings/cse/identities",
+      "implemented": false,
+      "fixture": null,
+      "tests": [],
+      "skip_reason": "Client-Side Encryption not relevant for testing"
+    },
+    {
+      "id": "gmail.users.settings.cse.keypairs.list",
+      "resource": "Settings/CSE",
+      "method": "GET",
+      "path": "/users/{userId}/settings/cse/keypairs",
+      "implemented": false,
+      "fixture": null,
+      "tests": [],
+      "skip_reason": "Client-Side Encryption not relevant for testing"
+    },
+    {
+      "id": "gmail.users.settings.cse.keypairs.get",
+      "resource": "Settings/CSE",
+      "method": "GET",
+      "path": "/users/{userId}/settings/cse/keypairs/{cseKeyPairId}",
+      "implemented": false,
+      "fixture": null,
+      "tests": [],
+      "skip_reason": "Client-Side Encryption not relevant for testing"
+    }
+  ]
+}

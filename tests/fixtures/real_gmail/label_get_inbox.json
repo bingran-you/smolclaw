@@ -1,0 +1,9 @@
+{
+  "id": "INBOX",
+  "name": "INBOX",
+  "type": "system",
+  "messagesTotal": 5,
+  "messagesUnread": 4,
+  "threadsTotal": 3,
+  "threadsUnread": 2
+}

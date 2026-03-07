@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+
+{% block title %}{{ messages[0].subject if messages else 'Thread' }} - Claw Gmail{% endblock %}
+
+{% block content %}
+<div class="max-w-4xl mx-auto py-4 px-6">
+    <!-- Back button + Subject -->
+    <div class="flex items-center gap-3 mb-4">
+        <a href="/" class="p-2 rounded-full hover:bg-gray-100">
+            <svg class="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/>
+            </svg>
+        </a>
+        <h1 class="text-xl font-normal text-gray-900">
+            {{ messages[0].subject if messages else '(no subject)' }}
+        </h1>
+    </div>
+
+    <!-- Messages in thread -->
+    {% for msg in messages %}
+    <div class="border border-gray-200 rounded-lg mb-4 {{ 'bg-white' if loop.last else 'bg-gray-50' }}">
+        <div class="flex items-start p-4 gap-3">
+            <!-- Avatar -->
+            <div class="w-10 h-10 rounded-full bg-blue-500 text-white flex items-center justify-center text-sm font-medium flex-shrink-0">
+                {{ msg.sender[0] | upper }}
+            </div>
+
+            <div class="flex-1 min-w-0">
+                <!-- Sender + date -->
+                <div class="flex items-center gap-2 mb-1">
+                    <span class="font-medium text-gray-900">
+                        {{ msg.sender.split('<')[0].strip() or msg.sender }}
+                    </span>
+                    <span class="text-xs text-gray-500">
+                        &lt;{{ msg.sender.split('<')[1].rstrip('>') if '<' in msg.sender else msg.sender }}&gt;
+                    </span>
+                    <span class="flex-1"></span>
+                    <span class="text-xs text-gray-500">
+                        {{ msg.internal_date.strftime('%b %d, %Y, %I:%M %p') if msg.internal_date else '' }}
+                    </span>
+                    <form action="/star/{{ msg.id }}" method="post" class="inline">
+                        <button type="submit">
+                            {% if msg.is_starred %}
+                            <svg class="w-5 h-5 text-yellow-400" fill="currentColor" viewBox="0 0 24 24">
+                                <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
+                            </svg>
+                            {% else %}
+                            <svg class="w-5 h-5 text-gray-300 hover:text-yellow-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z"/>
+                            </svg>
+                            {% endif %}
+                        </button>
+                    </form>
+                </div>
+
+                <!-- To -->
+                <div class="text-xs text-gray-500 mb-3">
+                    to {{ msg.to }}
+                    {% if msg.cc %}<span class="ml-2">cc: {{ msg.cc }}</span>{% endif %}
+                </div>
+
+                <!-- Body -->
+                {% if msg.body_html %}
+                <iframe srcdoc="{{ msg.body_html | e }}"
+                        sandbox="allow-same-origin"
+                        class="w-full border-0 rounded"
+                        style="min-height:80px"
+                        onload="this.style.height=(this.contentWindow.document.body.scrollHeight+24)+'px'">
+                </iframe>
+                {% else %}
+                <div class="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">{{ msg.body_plain }}</div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+
+    <!-- Reply box -->
+    <div class="border border-gray-200 rounded-lg p-4 mb-8">
+        <form action="/compose" method="post">
+            <input type="hidden" name="thread_id" value="{{ thread.id }}">
+            {% if messages %}
+            <input type="hidden" name="to" value="{{ messages[-1].sender.split('<')[1].rstrip('>') if '<' in messages[-1].sender else messages[-1].sender }}">
+            <input type="hidden" name="subject" value="RE: {{ messages[0].subject }}">
+            {% endif %}
+            <textarea name="body" rows="4" placeholder="Reply..."
+                      class="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500 resize-none"></textarea>
+            <div class="flex items-center gap-2 mt-2">
+                <button type="submit"
+                        class="px-6 py-2 bg-blue-600 text-white rounded-full text-sm hover:bg-blue-700">
+                    Send
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

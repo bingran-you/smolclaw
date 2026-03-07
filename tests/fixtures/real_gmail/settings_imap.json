@@ -1,0 +1,6 @@
+{
+  "enabled": false,
+  "autoExpunge": true,
+  "expungeBehavior": "archive",
+  "maxFolderSize": 0
+}

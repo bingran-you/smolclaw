@@ -1,0 +1,25 @@
+{
+  "history": [
+    {
+      "id": "2221",
+      "messages": [
+        {
+          "id": "19ca70e6566e238e",
+          "threadId": "19ca70e6566e238e"
+        }
+      ],
+      "messagesDeleted": [
+        {
+          "message": {
+            "id": "19ca70e6566e238e",
+            "threadId": "19ca70e6566e238e",
+            "labelIds": [
+              "DRAFT"
+            ]
+          }
+        }
+      ]
+    }
+  ],
+  "historyId": "2228"
+}
