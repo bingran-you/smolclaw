@@ -12,7 +12,16 @@ from sqlalchemy.orm import Session
 from claw_gcal.models import Calendar, Event
 
 from .deps import get_db, resolve_actor_user_id
-from .schemas import EventListResponse, EventPatchRequest, EventResource, EventWriteRequest
+from .schemas import (
+    EventActor,
+    EventDateTime,
+    EventListResponse,
+    EventPatchRequest,
+    EventReminders,
+    EventResource,
+    EventWriteRequest,
+    ReminderOverride,
+)
 
 router = APIRouter()
 
@@ -55,24 +64,35 @@ def _resolve_calendar_for_actor(db: Session, calendar_id: str, actor_user_id: st
 
 
 def _to_event_resource(event: Event) -> EventResource:
+    tz = event.calendar.timezone if event.calendar else "UTC"
+    actor_email = event.user.email_address if event.user else ""
+
     return EventResource(
         etag=event.etag or _compute_event_etag(event),
         id=event.id,
         status=event.status,
+        htmlLink=f"https://www.google.com/calendar/event?eid={event.id}",
         created=_iso(event.created_at),
         updated=_iso(event.updated_at),
-        summary=event.summary,
-        description=event.description,
-        location=event.location,
-        calendarId=event.calendar_id,
+        summary=event.summary or None,
+        description=event.description or None,
+        location=event.location or None,
         iCalUID=event.i_cal_uid,
         sequence=event.sequence,
-        start={"dateTime": _iso(event.start_dt)},
-        end={"dateTime": _iso(event.end_dt)},
+        start=EventDateTime(dateTime=_iso(event.start_dt), timeZone=tz),
+        end=EventDateTime(dateTime=_iso(event.end_dt), timeZone=tz),
+        creator=EventActor(email=actor_email, self=True) if actor_email else None,
+        organizer=EventActor(email=actor_email, self=True) if actor_email else None,
+        reminders=EventReminders(useDefault=True),
+        eventType="default",
     )
 
 
-@router.get("/calendars/{calendarId}/events", response_model=EventListResponse)
+@router.get(
+    "/calendars/{calendarId}/events",
+    response_model=EventListResponse,
+    response_model_exclude_none=True,
+)
 def events_list(
     calendarId: str,
     maxResults: int = Query(250, ge=1, le=2500),
@@ -93,19 +113,35 @@ def events_list(
     if timeMax:
         query = query.filter(Event.start_dt <= _parse_rfc3339(timeMax))
 
+    total_count = query.count()
     events = query.order_by(Event.start_dt.asc()).limit(maxResults).all()
     items = [_to_event_resource(e) for e in events]
 
     list_etag_raw = "|".join([item.etag for item in items])
+    updated = _iso(events[-1].updated_at) if events else _iso(datetime.now(timezone.utc))
+    token_seed = f"{calendar.id}:{len(events)}:{updated}"
+    next_sync_token = base64url_md5(token_seed)
+    next_page_token = str(maxResults) if total_count > maxResults else None
+
     return EventListResponse(
         etag=f'"{hashlib.md5(list_etag_raw.encode("utf-8")).hexdigest()}"',
         summary=calendar.summary,
+        description=calendar.description or "",
         timeZone=calendar.timezone,
+        updated=updated,
+        accessRole=calendar.access_role,
+        defaultReminders=[ReminderOverride(method="popup", minutes=10)],
+        nextPageToken=next_page_token,
+        nextSyncToken=None if next_page_token else next_sync_token,
         items=items,
     )
 
 
-@router.get("/calendars/{calendarId}/events/{eventId}", response_model=EventResource)
+@router.get(
+    "/calendars/{calendarId}/events/{eventId}",
+    response_model=EventResource,
+    response_model_exclude_none=True,
+)
 def events_get(
     calendarId: str,
     eventId: str,
@@ -122,7 +158,11 @@ def events_get(
     return _to_event_resource(event)
 
 
-@router.post("/calendars/{calendarId}/events", response_model=EventResource, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/calendars/{calendarId}/events",
+    response_model=EventResource,
+    response_model_exclude_none=True,
+)
 def events_insert(
     calendarId: str,
     body: EventWriteRequest,
@@ -151,7 +191,7 @@ def events_insert(
         created_at=now,
         updated_at=now,
         etag="",
-        i_cal_uid=f"{uuid.uuid4().hex}@smolclaw.local",
+        i_cal_uid=f"{uuid.uuid4().hex}@google.com",
         sequence=0,
     )
     event.etag = _compute_event_etag(event)
@@ -163,7 +203,11 @@ def events_insert(
     return _to_event_resource(event)
 
 
-@router.patch("/calendars/{calendarId}/events/{eventId}", response_model=EventResource)
+@router.patch(
+    "/calendars/{calendarId}/events/{eventId}",
+    response_model=EventResource,
+    response_model_exclude_none=True,
+)
 def events_patch(
     calendarId: str,
     eventId: str,
@@ -224,3 +268,8 @@ def events_delete(
     db.delete(event)
     db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+def base64url_md5(text: str) -> str:
+    digest = hashlib.md5(text.encode("utf-8")).hexdigest()
+    return digest

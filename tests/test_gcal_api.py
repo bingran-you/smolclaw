@@ -68,7 +68,8 @@ class TestCalendarList:
         assert resp.status_code == 200
 
         data = resp.json()
-        assert data["primary"] is True
+        assert data["kind"] == "calendar#calendar"
+        assert data["id"] == "alex@nexusai.com"
 
     def test_unknown_user_returns_404(self, gcal_client):
         resp = gcal_client.get("/calendar/v3/users/not-a-user/calendarList")
@@ -108,7 +109,7 @@ class TestEvents:
                 "end": {"dateTime": end},
             },
         )
-        assert create_resp.status_code == 201
+        assert create_resp.status_code == 200
         event_id = create_resp.json()["id"]
 
         patch_resp = gcal_client.patch(
