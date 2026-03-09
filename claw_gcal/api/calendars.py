@@ -25,9 +25,13 @@ from .schemas import (
 router = APIRouter()
 
 
+def _md5_hex(text: str) -> str:
+    return hashlib.md5(text.encode("utf-8")).hexdigest()
+
+
 def _etag_for_calendar(calendar: Calendar) -> str:
     raw = f"{calendar.id}:{calendar.summary}:{calendar.description}:{calendar.timezone}:{calendar.selected}"
-    return f'"{hashlib.md5(raw.encode("utf-8")).hexdigest()}"'
+    return f'"{_md5_hex(raw)}"'
 
 
 def _default_notification_settings() -> NotificationSettings:
@@ -106,12 +110,10 @@ def calendar_list(
 
     items = [_to_calendar_entry(c) for c in calendars]
 
-    list_etag_raw = "|".join([item.etag for item in items])
-    next_sync_token = hashlib.md5(
-        f"{_user_id}:{len(items)}:{list_etag_raw}".encode("utf-8")
-    ).hexdigest()
+    list_etag_raw = "|".join(item.etag for item in items)
+    next_sync_token = _md5_hex(f"{_user_id}:{len(items)}:{list_etag_raw}")
     return CalendarListResponse(
-        etag=f'"{hashlib.md5(list_etag_raw.encode("utf-8")).hexdigest()}"',
+        etag=f'"{_md5_hex(list_etag_raw)}"',
         items=items,
         nextSyncToken=next_sync_token,
     )

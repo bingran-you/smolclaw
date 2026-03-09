@@ -9,12 +9,11 @@ from claw_gcal.models import init_db
 
 
 def create_app(db_path: str | None = None, enable_mcp: bool = True):
-    """Initialize app: create tables and mount MCP."""
+    """Initialize the app: create tables, mount MCP."""
     init_db(db_path)
 
     if enable_mcp:
         from claw_gcal.mcp.server import mount_mcp
-
         mount_mcp(app)
 
     return app

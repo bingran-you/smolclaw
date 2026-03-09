@@ -20,7 +20,6 @@ def mount_mcp(app):
         return mcp
     except ImportError:
         import warnings
-
         warnings.warn(
             "fastapi-mcp not installed. MCP endpoint will not be available. "
             "Install with: pip install fastapi-mcp"

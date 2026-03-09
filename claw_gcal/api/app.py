@@ -1,4 +1,4 @@
-"""Main FastAPI application for Mock Google Calendar API."""
+"""Main FastAPI application."""
 
 from __future__ import annotations
 
@@ -79,6 +79,7 @@ app.add_middleware(
 # --- Action logging middleware ---
 class ActionLogMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
+        # Skip logging for admin/static/docs endpoints
         path = str(request.url.path)
         query = str(request.url.query)
         full_path = f"{path}?{query}" if query else path
@@ -96,7 +97,14 @@ class ActionLogMiddleware(BaseHTTPMiddleware):
 
         response = await call_next(request)
 
+        # Extract user from header or path
         user_id = request.headers.get("X-Claw-Gcal-User", "")
+        if not user_id:
+            user_id = request.headers.get("X-Mock-Gcal-User", "")
+        if not user_id and "/users/" in path:
+            parts = path.split("/users/")
+            if len(parts) > 1:
+                user_id = parts[1].split("/")[0]
 
         action_log.record(
             method=request.method,
@@ -119,7 +127,7 @@ app.include_router(calendars.router, prefix=GCAL_PREFIX, tags=["calendars"])
 app.include_router(events.router, prefix=GCAL_PREFIX, tags=["events"])
 
 
-# --- Quick profile endpoint for environment sanity checks ---
+# --- Profile ---
 @app.get(f"{GCAL_PREFIX}/users/{{userId}}/profile", response_model=Profile, tags=["profile"])
 def get_profile(
     userId: str,
@@ -127,9 +135,6 @@ def get_profile(
     _user_id: str = Depends(resolve_user_id),
 ):
     user = db.query(User).filter(User.id == _user_id).first()
-    if not user:
-        raise HTTPException(404, f"User {_user_id!r} not found")
-
     calendar_count = db.query(Calendar).filter(Calendar.user_id == _user_id).count()
     event_count = db.query(Event).filter(Event.user_id == _user_id).count()
 
@@ -158,10 +163,11 @@ def admin_reset():
 
 @app.post("/_admin/seed", tags=["admin"])
 def admin_seed(scenario: str = "default", seed: int = 42):
-    """Re-seed database with a specific scenario."""
+    """Re-seed database with a specific scenario (drops and recreates all data)."""
     from claw_gcal.models import Base, get_engine
     from claw_gcal.seed.generator import seed_database
 
+    # Drop all tables first so seed_database starts fresh
     engine = get_engine()
     Base.metadata.drop_all(engine)
     try:
@@ -209,22 +215,20 @@ def admin_restore(name: str):
 @app.get("/_admin/tasks", tags=["admin"])
 def admin_tasks():
     """JSON list of all registered task metadata."""
-    from claw_gcal.tasks import get_task as _get_task, list_tasks as _list_tasks
+    from claw_gcal.tasks import list_tasks as _list_tasks, get_task as _get_task
 
     tasks = []
     for name in _list_tasks():
-        task = _get_task(name)
-        tasks.append(
-            {
-                "name": task.name,
-                "description": task.description,
-                "instruction": task.instruction,
-                "category": task.category,
-                "scenario": task.scenario,
-                "points": task.points,
-                "tags": task.tags,
-            }
-        )
+        t = _get_task(name)
+        tasks.append({
+            "name": t.name,
+            "description": t.description,
+            "instruction": t.instruction,
+            "category": t.category,
+            "scenario": t.scenario,
+            "points": t.points,
+            "tags": t.tags,
+        })
     return {"tasks": tasks, "count": len(tasks)}
 
 

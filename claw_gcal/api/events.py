@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
 import hashlib
 import uuid
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy.orm import Session
@@ -117,14 +117,14 @@ def events_list(
     events = query.order_by(Event.start_dt.asc()).limit(maxResults).all()
     items = [_to_event_resource(e) for e in events]
 
-    list_etag_raw = "|".join([item.etag for item in items])
+    list_etag_raw = "|".join(item.etag for item in items)
     updated = _iso(events[-1].updated_at) if events else _iso(datetime.now(timezone.utc))
     token_seed = f"{calendar.id}:{len(events)}:{updated}"
     next_sync_token = _md5_hex(token_seed)
     next_page_token = str(maxResults) if total_count > maxResults else None
 
     return EventListResponse(
-        etag=f'"{hashlib.md5(list_etag_raw.encode("utf-8")).hexdigest()}"',
+        etag=f'"{_md5_hex(list_etag_raw)}"',
         summary=calendar.summary,
         description=calendar.description or "",
         timeZone=calendar.timezone,
@@ -271,5 +271,4 @@ def events_delete(
 
 
 def _md5_hex(text: str) -> str:
-    digest = hashlib.md5(text.encode("utf-8")).hexdigest()
-    return digest
+    return hashlib.md5(text.encode("utf-8")).hexdigest()

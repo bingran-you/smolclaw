@@ -1,4 +1,4 @@
-"""Pydantic schemas for Calendar API responses."""
+"""Pydantic schemas mirroring Google Calendar API response format."""
 
 from __future__ import annotations
 
@@ -27,6 +27,7 @@ class NotificationSettings(BaseModel):
     notifications: list[NotificationRule] = Field(default_factory=list)
 
 
+# --- Calendars ---
 class CalendarListEntry(BaseModel):
     kind: Literal["calendar#calendarListEntry"] = "calendar#calendarListEntry"
     etag: str
@@ -69,6 +70,7 @@ class CalendarInsertRequest(BaseModel):
     selected: bool = True
 
 
+# --- Events ---
 class EventDateTime(BaseModel):
     dateTime: str
     timeZone: str | None = None
@@ -137,6 +139,7 @@ class EventPatchRequest(BaseModel):
     end: EventDateTime | None = None
 
 
+# --- Profile ---
 class Profile(BaseModel):
     emailAddress: str
     displayName: str

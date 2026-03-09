@@ -30,16 +30,14 @@ class ActionLog:
         request_body: dict | None = None,
         response_status: int = 200,
     ):
-        self._entries.append(
-            ActionLogEntry(
-                timestamp=datetime.now(timezone.utc).isoformat(),
-                method=method,
-                path=path,
-                user_id=user_id,
-                request_body=request_body,
-                response_status=response_status,
-            )
-        )
+        self._entries.append(ActionLogEntry(
+            timestamp=datetime.now(timezone.utc).isoformat(),
+            method=method,
+            path=path,
+            user_id=user_id,
+            request_body=request_body,
+            response_status=response_status,
+        ))
 
     def get_entries(self) -> list[dict]:
         return [
