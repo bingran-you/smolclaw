@@ -4,6 +4,8 @@ Mock environments for AI agent testing. Start with a fully seeded Gmail API — 
 
 > We are actively restructuring the repo to support more environments (Calendar, Drive, Slack) and adding reliability tests to existing ones.
 
+`claw_gcal` now provides a parallel mock Google Calendar environment with the same seed/serve/reset/admin flow as `claw_gmail`.
+
 ## Install
 
 ```bash
@@ -27,6 +29,15 @@ Try it:
 curl http://localhost:8001/gmail/v1/users/me/profile
 curl http://localhost:8001/gmail/v1/users/me/messages
 ```
+
+Seed and run the Calendar environment:
+
+```bash
+smolclaw-gcal seed --scenario default
+smolclaw-gcal serve --port 8002 --no-mcp
+```
+
+Calendar API base URL: `http://localhost:8002/calendar/v3/`
 
 Interactive API docs are at `http://localhost:8001/docs`.
 
