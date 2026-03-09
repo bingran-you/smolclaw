@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import threading
 import time
 from typing import Any
@@ -35,12 +36,21 @@ def _start_server(host: str, port: int, db_path: str):
 
 
 if HAS_GYM:
-
     class GCalToolEnv(gym.Env):
-        """Gymnasium environment for interacting with Mock Calendar API via tool calls."""
+        """Gymnasium environment for interacting with the Mock Calendar API via tool calls.
+
+        Usage:
+            env = GCalToolEnv(task_name="cap-calendar-01", scenario="default")
+            obs, info = env.reset()
+            obs, reward, terminated, truncated, info = env.step({
+                "tool_name": "events_insert",
+                "tool_args": {"calendarId": "primary", "summary": "Standup", ...}
+            })
+        """
 
         metadata = {"render_modes": ["human"]}
 
+        # API tool definitions
         TOOLS = {
             "calendar_list": ("GET", "/calendar/v3/users/me/calendarList"),
             "calendar_get": ("GET", "/calendar/v3/calendars/{calendarId}"),
@@ -81,6 +91,7 @@ if HAS_GYM:
             self.task = task
             self.scenario = scenario or task.scenario
 
+            # Spaces
             self.action_space = spaces.Dict(
                 {
                     "tool_name": spaces.Text(min_length=1, max_length=100),
@@ -100,13 +111,12 @@ if HAS_GYM:
             self._client = None
 
         def reset(self, seed=None, options=None):
-            """Reset environment: reseed DB, start server, return initial observation."""
+            """Reset environment: re-seed DB, start server, return initial observation."""
             if seed is not None:
                 self.seed_val = seed
 
+            # Reset DB
             reset_engine()
-            import os
-
             if os.path.exists(self.db_path):
                 os.unlink(self.db_path)
 
@@ -116,8 +126,9 @@ if HAS_GYM:
                 db_path=self.db_path,
             )
 
+            # Start server if not running
             if self._server_thread is None or not self._server_thread.is_alive():
-                reset_engine()
+                reset_engine()  # Reset so server picks up new DB
                 self._server_thread = threading.Thread(
                     target=_start_server,
                     args=(self.host, self.port, self.db_path),
@@ -129,6 +140,7 @@ if HAS_GYM:
             self._client = httpx.Client(base_url=self.base_url, timeout=30)
             self._step_count = 0
 
+            # Reset action log
             self._client.post("/_admin/reset")
 
             obs = {
@@ -158,9 +170,11 @@ if HAS_GYM:
             else:
                 tool_args = tool_args_raw
 
+            # Execute tool call
             api_response = self._execute_tool(tool_name, tool_args)
 
-            reward = self.step_penalty
+            # Check task completion
+            reward = self.step_penalty  # Per-step penalty
             terminated = False
             truncated = self._step_count >= self.max_steps
 
@@ -193,6 +207,7 @@ if HAS_GYM:
 
             method, path_template = self.TOOLS[tool_name]
 
+            # Substitute path params
             path = path_template
             for key in ["calendarId", "eventId"]:
                 token = "{" + key + "}"
@@ -214,7 +229,7 @@ if HAS_GYM:
                 else:
                     return {"error": f"Unsupported method: {method}"}
 
-                if resp.status_code in (200, 201):
+                if resp.status_code == 200 or resp.status_code == 201:
                     return resp.json()
                 if resp.status_code == 204:
                     return {"status": "no_content"}
@@ -223,6 +238,7 @@ if HAS_GYM:
                 return {"error": str(exc)}
 
         def _should_evaluate(self, tool_name: str) -> bool:
+            """Heuristic: evaluate after write operations."""
             write_tools = {
                 "calendars_insert",
                 "calendars_delete",
@@ -240,9 +256,9 @@ if HAS_GYM:
                     resp = httpx.get(f"{self.base_url}/health", timeout=1)
                     if resp.status_code == 200:
                         return
-                except Exception:
+                except (httpx.ConnectError, httpx.ReadTimeout):
                     pass
-                time.sleep(0.1)
+                time.sleep(0.2)
             raise TimeoutError(f"Server did not start within {timeout}s")
 
         def render(self):
@@ -252,7 +268,6 @@ if HAS_GYM:
             if self._client:
                 self._client.close()
 else:
-
     class GCalToolEnv:
         """Stub when gymnasium is not installed."""
 
