@@ -28,12 +28,14 @@ from claw_gcal.seed.content_library.scenarios import (
     TRAVEL_HEAVY_DISTRIBUTION,
     TRAVEL_HEAVY_TARGET_EVENTS,
 )
+from claw_gcal.seed.content_library.security import SECURITY_EVENT_POOL
 from claw_gcal.seed.content_library.travel import TRAVEL_EVENT_POOL
 from claw_gcal.seed.content_library.work import WORK_EVENT_POOL
 
 EVENT_POOLS: dict[str, list[dict]] = {
     "work": WORK_EVENT_POOL,
     "ops": OPS_EVENT_POOL,
+    "security": SECURITY_EVENT_POOL,
     "personal": PERSONAL_EVENT_POOL,
     "travel": TRAVEL_EVENT_POOL,
 }
@@ -57,6 +59,7 @@ __all__ = [
     "RECURRING_NEEDLES",
     "ROOM_NAMES",
     "SCENARIO_DEFINITIONS",
+    "SECURITY_EVENT_POOL",
     "TRAVEL_EVENT_POOL",
     "TRAVEL_HEAVY_DISTRIBUTION",
     "TRAVEL_HEAVY_TARGET_EVENTS",

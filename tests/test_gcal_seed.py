@@ -31,8 +31,10 @@ def test_scenarios_include_default_and_long_context():
 
 
 def test_seed_content_is_richer_and_more_modular():
-    assert len(PERSONAS) >= 15
-    assert sum(len(pool) for pool in EVENT_POOLS.values()) >= 17
+    assert len(PERSONAS) >= 19
+    assert "security" in EVENT_POOLS
+    assert len(EVENT_POOLS["security"]) >= 5
+    assert sum(len(pool) for pool in EVENT_POOLS.values()) >= 31
     assert {"default", "launch_crunch", "travel_heavy", "long_context"} <= set(SCENARIO_DEFINITIONS)
 
 
@@ -65,12 +67,18 @@ def test_default_seed_distribution_and_coverage(tmp_path):
         ]
         non_primary = [e for e in events if e.calendar_id != primary.id]
         covered_calendar_ids = {e.calendar_id for e in events}
+        security_flavored = [
+            e
+            for e in events
+            if any(token in (e.summary or "") for token in ("Security", "Access", "Compliance", "Vendor"))
+        ]
 
         assert len(recurring) >= len(RECURRING_NEEDLES)
         assert len(cancelled) >= 1
         assert len(all_day) >= 1
         assert len(non_primary) >= 1
         assert len(covered_calendar_ids) == len(CALENDAR_TEMPLATES)
+        assert len(security_flavored) >= 1
     finally:
         db.close()
         reset_engine()

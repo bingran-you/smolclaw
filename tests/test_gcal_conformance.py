@@ -353,6 +353,44 @@ class TestWriteConformance:
         _assert_top_level_keys_equal(real, mock)
         _assert_shape(real, mock)
 
+    def test_events_move_shape(self, gcal_client):
+        real = load_fixture("events_move_response.json")
+        cal = gcal_client.post(
+            "/calendar/v3/calendars",
+            json={"summary": "Move Fixture", "description": "Updated desc", "timeZone": "UTC"},
+        ).json()
+        start = datetime.now(timezone.utc).replace(microsecond=0) + timedelta(days=1)
+        end = start + timedelta(hours=1)
+        inserted = gcal_client.post(
+            f"/calendar/v3/calendars/{cal['id']}/events",
+            json={
+                "summary": "Fixture Move Event",
+                "start": {"dateTime": _rfc3339(start), "timeZone": "UTC"},
+                "end": {"dateTime": _rfc3339(end), "timeZone": "UTC"},
+            },
+        )
+        event_id = inserted.json()["id"]
+
+        mock = gcal_client.post(
+            f"/calendar/v3/calendars/{cal['id']}/events/{event_id}/move",
+            params={"destination": "primary"},
+        ).json()
+        _assert_top_level_keys_equal(real, mock)
+        _assert_shape(real, mock)
+
+    def test_events_quickadd_shape(self, gcal_client):
+        real = load_fixture("events_quickadd_response.json")
+        cal = gcal_client.post(
+            "/calendar/v3/calendars",
+            json={"summary": "QuickAdd Fixture", "description": "Updated desc", "timeZone": "UTC"},
+        ).json()
+        mock = gcal_client.post(
+            f"/calendar/v3/calendars/{cal['id']}/events/quickAdd",
+            params={"text": "Lunch tomorrow noon"},
+        ).json()
+        _assert_top_level_keys_equal(real, mock)
+        _assert_shape(real, mock)
+
     def test_events_instances_shape(self, gcal_client):
         real = load_fixture("events_instances_response.json")
         cal = gcal_client.post(

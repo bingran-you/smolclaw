@@ -8,6 +8,7 @@ import re
 import uuid
 from datetime import datetime, time, timedelta, timezone
 from typing import Any, Iterator
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy.orm import Session
@@ -83,6 +84,18 @@ def _compute_event_etag(event: Event) -> str:
     return f'"{hashlib.md5(raw.encode("utf-8")).hexdigest()}"'
 
 
+def _compute_event_etag_parts(
+    *,
+    event_id: str,
+    summary: str,
+    status: str,
+    updated_at: datetime,
+    sequence: int,
+) -> str:
+    raw = f"{event_id}:{summary}:{status}:{updated_at.isoformat()}:{sequence}"
+    return f'"{hashlib.md5(raw.encode("utf-8")).hexdigest()}"'
+
+
 def _md5_hex(text: str) -> str:
     return hashlib.md5(text.encode("utf-8")).hexdigest()
 
@@ -124,7 +137,21 @@ _WEEKDAY_MAP: dict[str, int] = {
     "SU": 6,
 }
 
+_QUICK_ADD_WEEKDAYS: dict[str, int] = {
+    "monday": 0,
+    "tuesday": 1,
+    "wednesday": 2,
+    "thursday": 3,
+    "friday": 4,
+    "saturday": 5,
+    "sunday": 6,
+}
+
 _INSTANCE_ID_PATTERN = re.compile(r"^(?P<base>.+)_(?P<stamp>\d{8}T\d{6}Z)$")
+_QUICK_ADD_TIME_PATTERN = re.compile(
+    r"\b(?P<hour>1[0-2]|0?\d)(?::(?P<minute>[0-5]\d))?\s*(?P<ampm>am|pm)\b",
+    re.IGNORECASE,
+)
 
 
 def _parse_until(value: str) -> datetime | None:
@@ -409,6 +436,126 @@ def _to_event_resource(event: Event) -> EventResource:
         recurrence=recurrence,
         recurringEventId=event.recurring_event_id or None,
         originalStartTime=original_start,
+    )
+
+
+def _tzinfo_for_name(tz_name: str) -> ZoneInfo:
+    try:
+        return ZoneInfo(tz_name)
+    except Exception:
+        return ZoneInfo("UTC")
+
+
+def _quick_add_summary_and_start(text: str, tz_name: str) -> tuple[str, datetime]:
+    now_local = datetime.now(_tzinfo_for_name(tz_name)).replace(microsecond=0)
+    raw_text = text.strip()
+    if not raw_text:
+        return "", now_local.astimezone(timezone.utc)
+
+    summary = raw_text
+    lowered = raw_text.lower()
+    target_date = now_local.date()
+    target_hour = now_local.hour
+    target_minute = now_local.minute
+    saw_date_hint = False
+    saw_time_hint = False
+
+    if "tomorrow" in lowered:
+        target_date = target_date + timedelta(days=1)
+        summary = re.sub(r"\btomorrow\b", "", summary, flags=re.IGNORECASE)
+        saw_date_hint = True
+    else:
+        for weekday_name, weekday_idx in _QUICK_ADD_WEEKDAYS.items():
+            if re.search(rf"\b{weekday_name}\b", lowered):
+                delta = (weekday_idx - now_local.weekday()) % 7
+                if delta == 0:
+                    delta = 7
+                target_date = target_date + timedelta(days=delta)
+                summary = re.sub(rf"\b{weekday_name}\b", "", summary, flags=re.IGNORECASE)
+                saw_date_hint = True
+                break
+
+    if re.search(r"\bnoon\b", lowered):
+        target_hour = 12
+        target_minute = 0
+        summary = re.sub(r"\bnoon\b", "", summary, flags=re.IGNORECASE)
+        saw_time_hint = True
+    elif re.search(r"\bmidnight\b", lowered):
+        target_hour = 0
+        target_minute = 0
+        summary = re.sub(r"\bmidnight\b", "", summary, flags=re.IGNORECASE)
+        saw_time_hint = True
+    else:
+        match = _QUICK_ADD_TIME_PATTERN.search(summary)
+        if match:
+            hour = int(match.group("hour"))
+            minute = int(match.group("minute") or "0")
+            ampm = match.group("ampm").lower()
+            if ampm == "pm" and hour != 12:
+                hour += 12
+            if ampm == "am" and hour == 12:
+                hour = 0
+            target_hour = hour
+            target_minute = minute
+            summary = _QUICK_ADD_TIME_PATTERN.sub("", summary, count=1)
+            saw_time_hint = True
+
+    normalized_summary = re.sub(r"\s+", " ", summary).strip(" ,.-")
+    if not normalized_summary:
+        normalized_summary = raw_text
+
+    if saw_date_hint or saw_time_hint:
+        start_local = datetime.combine(
+            target_date,
+            time(target_hour, target_minute),
+            tzinfo=now_local.tzinfo,
+        )
+    else:
+        start_local = now_local
+
+    return normalized_summary, start_local.astimezone(timezone.utc)
+
+
+def _move_response_resource(
+    *,
+    event: Event,
+    actor_email: str,
+    time_zone: str,
+    updated_at: datetime,
+) -> EventResource:
+    move_sequence = 0
+    return EventResource(
+        etag=_compute_event_etag_parts(
+            event_id=event.id,
+            summary=event.summary,
+            status="cancelled",
+            updated_at=updated_at,
+            sequence=move_sequence,
+        ),
+        id=event.id,
+        status="cancelled",
+        htmlLink=f"https://www.google.com/calendar/event?eid={event.id}",
+        created=_iso(event.created_at),
+        updated=_iso(updated_at),
+        summary=event.summary or None,
+        description=event.description or None,
+        location=event.location or None,
+        iCalUID=event.i_cal_uid,
+        sequence=move_sequence,
+        start=_event_datetime_resource(
+            dt=event.start_dt,
+            is_date=bool(event.start_is_date),
+            tz_name=time_zone,
+        ),
+        end=_event_datetime_resource(
+            dt=event.end_dt,
+            is_date=bool(event.end_is_date),
+            tz_name=time_zone,
+        ),
+        creator=EventActor(email=actor_email) if actor_email else None,
+        organizer=EventActor(email=actor_email) if actor_email else None,
+        reminders=EventReminders(useDefault=True),
+        eventType="default",
     )
 
 
@@ -988,13 +1135,19 @@ def events_move(
     if not event:
         raise HTTPException(404, "Not Found")
 
+    updated_at = datetime.now(timezone.utc)
+    move_response = _move_response_resource(
+        event=event,
+        actor_email=event.user.email_address if event.user else "",
+        time_zone=source_calendar.timezone,
+        updated_at=updated_at,
+    )
     event.calendar_id = destination_calendar.id
-    event.updated_at = datetime.now(timezone.utc)
-    event.sequence += 1
+    event.updated_at = updated_at
+    event.sequence = 0
     event.etag = _compute_event_etag(event)
     db.commit()
-    db.refresh(event)
-    return _to_event_resource(event)
+    return move_response
 
 
 @router.post(
@@ -1009,10 +1162,10 @@ def events_quick_add(
     _actor_user_id: str = Depends(resolve_actor_user_id),
 ):
     calendar = _resolve_calendar_for_actor(db, calendarId, _actor_user_id)
-    start_dt = datetime.now(timezone.utc) + timedelta(hours=1)
+    summary, start_dt = _quick_add_summary_and_start(text, calendar.timezone)
     end_dt = start_dt + timedelta(hours=1)
     body = EventWriteRequest(
-        summary=text,
+        summary=summary,
         description="",
         location="",
         start=EventDateTime(dateTime=_iso(start_dt)),

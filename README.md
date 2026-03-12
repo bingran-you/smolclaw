@@ -67,12 +67,12 @@ smolclaw reset                      # restore to initial state
 |-------------|----------|-------------------|-------------|
 | Gmail | `default` | ~57 emails | Standard inbox with realistic threads/labels |
 | Gmail | `long_context` | ~3000 emails | Stress test with high-volume realistic email |
-| Calendar | `default` | ~72 events | Mixed work/personal/travel calendars with recurring + cancelled events |
+| Calendar | `default` | ~72 events | Mixed work/personal/travel/security calendars with recurring + cancelled events |
 | Calendar | `launch_crunch` | ~96 events | Launch-heavy calendar with war rooms, leadership syncs, and operational load |
 | Calendar | `travel_heavy` | ~88 events | Conference and customer travel with dense logistics and follow-up work |
 | Calendar | `long_context` | ~1400 events | Stress test with dense event history and recurrence |
 
-The Calendar seed content is organized as a reusable content library with named personas, shared calendar templates, fixed needles, reusable event pools, and scenario presets so agents see more realistic scheduling patterns without sacrificing determinism.
+The Calendar seed content is organized as a reusable content library with named personas, shared calendar templates, fixed needles, reusable event pools, and scenario presets so agents see more realistic scheduling, security/compliance, and travel patterns without sacrificing determinism.
 
 ## Configuration
 
@@ -91,6 +91,7 @@ Focused validation commands:
 ```bash
 pytest tests/test_gcal_api.py tests/test_gcal_conformance.py tests/test_gcal_seed.py
 python scripts/validate_gcal_seed.py --scenario long_context
+python scripts/gws_calendar_mock_real_compare.py
 pytest tests/test_api.py tests/test_conformance.py tests/test_settings.py tests/test_mime.py
 python scripts/validate_seed.py
 ```

@@ -63,6 +63,26 @@ PERSONAS: dict[str, dict[str, str]] = {
         "email": "carlos.medina@nexusai.com",
         "role": "sales",
     },
+    "ian": {
+        "name": "Ian Mercer",
+        "email": "ian.mercer@nexusai.com",
+        "role": "security",
+    },
+    "rachel": {
+        "name": "Rachel Stein",
+        "email": "rachel.stein@nexusai.com",
+        "role": "legal",
+    },
+    "tanya": {
+        "name": "Tanya Brooks",
+        "email": "tanya.brooks@nexusai.com",
+        "role": "peopleops",
+    },
+    "kevin": {
+        "name": "Kevin Shah",
+        "email": "kevin.shah@auditco.com",
+        "role": "auditor",
+    },
     "amy": {
         "name": "Amy Chen",
         "email": "amy.chen@gmail.com",

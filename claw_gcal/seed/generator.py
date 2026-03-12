@@ -134,13 +134,17 @@ def _create_user(idx: int) -> User:
 
 
 def seed_default_scenario(db: Session, user: User, calendars_by_key: dict[str, Calendar], rng) -> int:
+    config = SCENARIO_DEFINITIONS["default"]
     return seed_distribution_scenario(
         db,
         user,
         calendars_by_key,
         rng,
-        target_events=DEFAULT_TARGET_EVENTS,
-        distribution=DEFAULT_DISTRIBUTION,
+        target_events=config["target_events"],
+        distribution=config["distribution"],
+        needle_events=config["needle_events"],
+        recurring_needles=config["recurring_needles"],
+        include_needles=config["include_needles"],
     )
 
 
@@ -190,13 +194,17 @@ def seed_long_context_scenario(
     calendars_by_key: dict[str, Calendar],
     rng,
 ) -> int:
+    config = SCENARIO_DEFINITIONS["long_context"]
     return _seed_long_context_base(
         db,
         user,
         calendars_by_key,
         rng,
-        target_events=LONG_CONTEXT_TARGET_EVENTS,
-        distribution=LONG_CONTEXT_DISTRIBUTION,
+        target_events=config["target_events"],
+        distribution=config["distribution"],
+        needle_events=config["needle_events"],
+        recurring_needles=config["recurring_needles"],
+        include_needles=config["include_needles"],
     )
 
 

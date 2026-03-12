@@ -13,11 +13,14 @@ import os
 import re
 import subprocess
 import sys
+from base64 import b64decode, b64encode
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
-from urllib.parse import quote
+from urllib.error import HTTPError
+from urllib.parse import quote, urlencode
+from urllib.request import Request, urlopen
 
 from fastapi.testclient import TestClient
 
@@ -33,11 +36,14 @@ REPORTS_DIR = ROOT / "reports"
 MOCK_DB = ROOT / ".data" / "gws_calendar_compare.db"
 COVERAGE_PATH = ROOT / "tests" / "fixtures" / "mock_coverage_gcal.json"
 REAL_ACCOUNT = "dowhiz@deep-tutor.com"
-CLI_TRANSPORT_LIMITED_ENDPOINTS = {
+RAW_HTTP_ENDPOINTS = {
     "calendar.calendars.clear",
     "calendar.events.move",
     "calendar.events.quickAdd",
 }
+GOOGLE_CALENDAR_BASE_URL = "https://www.googleapis.com/calendar/v3"
+GWS_CONFIG_DIR = Path.home() / ".config" / "gws"
+_REAL_ACCESS_TOKEN: str | None = None
 
 
 @dataclass
@@ -98,6 +104,136 @@ def _normalize_wrapper_payload(payload: Any) -> Any:
     return payload
 
 
+def _account_suffix(account: str) -> str:
+    return b64encode(account.encode("utf-8")).decode("ascii").rstrip("=")
+
+
+def _load_real_authorized_user_credentials() -> dict[str, Any]:
+    try:
+        from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+    except ModuleNotFoundError as exc:
+        raise RuntimeError(
+            "cryptography is required for raw HTTP parity checks. Install dev deps first."
+        ) from exc
+
+    key_path = GWS_CONFIG_DIR / ".encryption_key"
+    if not key_path.exists():
+        raise FileNotFoundError(f"Missing gws encryption key: {key_path}")
+
+    suffix = _account_suffix(REAL_ACCOUNT)
+    candidates = [
+        GWS_CONFIG_DIR / f"credentials.{suffix}.enc",
+        GWS_CONFIG_DIR / "credentials.enc",
+    ]
+    creds_path = next((path for path in candidates if path.exists()), None)
+    if creds_path is None:
+        raise FileNotFoundError(
+            f"Missing encrypted gws credentials for {REAL_ACCOUNT}. Run `gws auth login` first."
+        )
+
+    key = b64decode(key_path.read_text())
+    encrypted = creds_path.read_bytes()
+    if len(encrypted) < 12:
+        raise RuntimeError(f"Encrypted credential payload is too short: {creds_path}")
+
+    payload = AESGCM(key).decrypt(encrypted[:12], encrypted[12:], None)
+    creds = json.loads(payload)
+    if not isinstance(creds, dict):
+        raise RuntimeError(f"Unexpected credential payload in {creds_path}")
+    return creds
+
+
+def _real_access_token() -> str:
+    global _REAL_ACCESS_TOKEN
+    if _REAL_ACCESS_TOKEN:
+        return _REAL_ACCESS_TOKEN
+
+    creds = _load_real_authorized_user_credentials()
+    form = urlencode(
+        {
+            "client_id": creds["client_id"],
+            "client_secret": creds["client_secret"],
+            "refresh_token": creds["refresh_token"],
+            "grant_type": "refresh_token",
+        }
+    ).encode("utf-8")
+    req = Request("https://oauth2.googleapis.com/token", data=form, method="POST")
+    with urlopen(req) as resp:
+        payload = json.loads(resp.read().decode("utf-8"))
+    token = payload.get("access_token")
+    if not token:
+        raise RuntimeError("OAuth token response did not contain access_token")
+    _REAL_ACCESS_TOKEN = str(token)
+    return _REAL_ACCESS_TOKEN
+
+
+def _normalize_http_success_status(status_code: int) -> int:
+    return 200 if status_code == 204 else status_code
+
+
+def _real_raw_http_call(
+    method: str,
+    path: str,
+    path_param_names: list[str],
+    params: dict[str, Any] | None,
+    body: Any | None,
+) -> CallResult:
+    params = dict(params or {})
+    resolved_path = path.lstrip("/")
+    for p in path_param_names:
+        resolved_path = resolved_path.replace("{" + p + "}", quote(str(params.get(p, "")), safe=""))
+
+    query = {k: v for k, v in params.items() if k not in path_param_names and v is not None}
+    url = f"{GOOGLE_CALENDAR_BASE_URL}/{resolved_path}"
+    if query:
+        url = f"{url}?{urlencode(query, doseq=True)}"
+
+    headers = {
+        "Authorization": f"Bearer {_real_access_token()}",
+    }
+    if body is None:
+        data = b""
+        headers["Content-Length"] = "0"
+    else:
+        data = json.dumps(body, separators=(",", ":")).encode("utf-8")
+        headers["Content-Type"] = "application/json"
+
+    req = Request(url, data=data, method=method.upper(), headers=headers)
+    try:
+        with urlopen(req) as resp:
+            raw_bytes = resp.read()
+            raw_text = raw_bytes.decode("utf-8") if raw_bytes else ""
+            payload = _extract_json(raw_text) if raw_text else None
+            status_code = _normalize_http_success_status(resp.status)
+    except HTTPError as exc:
+        raw_text = exc.read().decode("utf-8")
+        payload = _extract_json(raw_text)
+        status_code = _normalize_http_success_status(exc.code)
+
+    if isinstance(payload, dict) and isinstance(payload.get("error"), dict):
+        err = payload["error"]
+        reason = err.get("reason")
+        message = err.get("message")
+        keys: list[str] = []
+    elif status_code >= 400:
+        reason = None
+        message = raw_text or None
+        keys = []
+    else:
+        reason = None
+        message = None
+        keys = sorted(payload.keys()) if isinstance(payload, dict) else []
+
+    return CallResult(
+        status=status_code,
+        returncode=None,
+        keys=keys,
+        error_reason=reason,
+        error_message=message,
+        raw=payload,
+    )
+
+
 def _real_call(tokens: list[str], params: dict[str, Any] | None, body: Any | None) -> CallResult:
     cmd = [str(GWS_BIN), "calendar", *tokens]
     if params:
@@ -131,6 +267,58 @@ def _real_call(tokens: list[str], params: dict[str, Any] | None, body: Any | Non
         error_message=message,
         raw=payload,
     )
+
+
+def _real_call_for_endpoint(
+    endpoint_id: str,
+    tokens: list[str],
+    method: str,
+    path: str,
+    path_param_names: list[str],
+    params: dict[str, Any] | None,
+    body: Any | None,
+) -> CallResult:
+    if endpoint_id in RAW_HTTP_ENDPOINTS:
+        return _real_raw_http_call(method, path, path_param_names, params, body)
+    return _real_call(tokens, params, body)
+
+
+def _payload_signature(endpoint_id: str, payload: Any) -> dict[str, Any] | None:
+    if endpoint_id == "calendar.calendars.clear":
+        return {"empty": payload in (None, {}, [])}
+
+    if endpoint_id in {"calendar.events.move", "calendar.events.quickAdd"} and isinstance(payload, dict):
+        start = payload.get("start") if isinstance(payload.get("start"), dict) else {}
+        end = payload.get("end") if isinstance(payload.get("end"), dict) else {}
+        return {
+            "status": payload.get("status"),
+            "summary": payload.get("summary"),
+            "start": start.get("dateTime") or start.get("date"),
+            "end": end.get("dateTime") or end.get("date"),
+        }
+
+    return None
+
+
+def _environment_limit_reason(endpoint_id: str, ctx: dict[str, Any]) -> str | None:
+    if endpoint_id in {
+        "calendar.calendarList.patch",
+        "calendar.calendarList.update",
+        "calendar.calendars.patch",
+        "calendar.calendars.update",
+    } and not ctx.get("has_writable_secondary", False):
+        return "requires-writable-secondary"
+
+    if endpoint_id == "calendar.calendars.delete" and not ctx.get("has_delete_secondary", False):
+        return "requires-delete-secondary"
+
+    if endpoint_id == "calendar.calendars.clear" and ctx.get("uses_primary_events", False):
+        return "primary-clear-would-destroy-event-fixtures"
+
+    if endpoint_id == "calendar.events.move" and not ctx.get("has_distinct_move_destination", False):
+        return "requires-distinct-source-and-destination-calendars"
+
+    return None
 
 
 def _mock_call(
@@ -295,7 +483,7 @@ def _build_request(endpoint_id: str, method: str, path_params: list[str], ctx: d
     elif endpoint_id == "calendar.events.move":
         params["destination"] = ctx["move_destination_calendar_id"]
     elif endpoint_id == "calendar.events.quickAdd":
-        params["text"] = f"Quick parity {ctx['suffix']}"
+        params["text"] = "Lunch tomorrow noon"
 
     if method in {"POST", "PUT", "PATCH"}:
         if endpoint_id == "calendar.acl.insert":
@@ -391,17 +579,22 @@ def _build_event_bodies(suffix: str) -> tuple[dict[str, Any], dict[str, Any], st
     return event_body, event_body_update, _iso(start), _iso(end2)
 
 
-def _collect_real_context() -> dict[str, Any]:
+def _shared_compare_context() -> dict[str, Any]:
     suffix = datetime.now().strftime("%H%M%S")
     event_body, event_body_update, time_min, time_max = _build_event_bodies(suffix)
-
-    ctx: dict[str, Any] = {
+    return {
         "suffix": suffix,
         "setting": "timezone",
         "event_body": event_body,
         "event_body_update": event_body_update,
         "time_min": time_min,
         "time_max": time_max,
+    }
+
+
+def _collect_real_context(shared: dict[str, Any]) -> dict[str, Any]:
+    ctx: dict[str, Any] = {
+        **shared,
         "created_calendar_ids": [],
         "created_event_ids": [],
         "created_rule_ids": [],
@@ -418,7 +611,7 @@ def _collect_real_context() -> dict[str, Any]:
             ["calendars", "insert"],
             None,
             {
-                "summary": f"Parity {label} {suffix}",
+                "summary": f"Parity {label} {ctx['suffix']}",
                 "description": "",
                 "timeZone": "UTC",
             },
@@ -455,7 +648,11 @@ def _collect_real_context() -> dict[str, Any]:
 
     events_cal = create_calendar("Events")
     if not events_cal:
-        events_cal = writable_cal
+        fallback = [cid for cid in owned_secondary_ids if cid != delete_cal]
+        events_cal = fallback[0] if fallback else primary_id
+
+    if events_cal == delete_cal and primary_id != delete_cal:
+        events_cal = primary_id
 
     move_destination = primary_id
     if move_destination == events_cal:
@@ -476,37 +673,41 @@ def _collect_real_context() -> dict[str, Any]:
     ctx["calendar_list_insert_id"] = "primary"  # Keep deterministic invalid case.
     ctx["calendar_list_delete_id"] = primary_id
     ctx["move_destination_calendar_id"] = move_destination
+    ctx["has_writable_secondary"] = writable_cal != primary_id
+    ctx["has_delete_secondary"] = delete_cal != primary_id
+    ctx["uses_primary_events"] = events_cal == primary_id
+    ctx["has_distinct_move_destination"] = move_destination != events_cal
 
-    ev_read = call(["events", "insert"], {"calendarId": ctx["calendar_id_events"]}, event_body)
+    ev_read = call(["events", "insert"], {"calendarId": ctx["calendar_id_events"]}, ctx["event_body"])
     ctx["event_id_read"] = (ev_read or {}).get("id", "event-read-missing")
     if ctx["event_id_read"] != "event-read-missing":
         ctx["created_event_ids"].append(ctx["event_id_read"])
 
-    ev_delete = call(["events", "insert"], {"calendarId": ctx["calendar_id_events"]}, event_body)
+    ev_delete = call(["events", "insert"], {"calendarId": ctx["calendar_id_events"]}, ctx["event_body"])
     ctx["event_id_delete"] = (ev_delete or {}).get("id", ctx["event_id_read"])
     if ctx["event_id_delete"] and ctx["event_id_delete"] != ctx["event_id_read"]:
         ctx["created_event_ids"].append(ctx["event_id_delete"])
 
-    ev_move = call(["events", "insert"], {"calendarId": ctx["calendar_id_events"]}, event_body)
+    ev_move = call(["events", "insert"], {"calendarId": ctx["calendar_id_events"]}, ctx["event_body"])
     ctx["event_id_move"] = (ev_move or {}).get("id", ctx["event_id_read"])
     if ctx["event_id_move"] and ctx["event_id_move"] not in ctx["created_event_ids"]:
         ctx["created_event_ids"].append(ctx["event_id_move"])
 
-    ev_patch = call(["events", "insert"], {"calendarId": ctx["calendar_id_events"]}, event_body)
+    ev_patch = call(["events", "insert"], {"calendarId": ctx["calendar_id_events"]}, ctx["event_body"])
     ctx["event_id_patch"] = (ev_patch or {}).get("id", ctx["event_id_read"])
     if ctx["event_id_patch"] and ctx["event_id_patch"] not in ctx["created_event_ids"]:
         ctx["created_event_ids"].append(ctx["event_id_patch"])
 
     # Ensure list(maxResults=5) returns a paginated shape in both real and mock.
     for _ in range(2):
-        ev_extra = call(["events", "insert"], {"calendarId": ctx["calendar_id_events"]}, event_body)
+        ev_extra = call(["events", "insert"], {"calendarId": ctx["calendar_id_events"]}, ctx["event_body"])
         extra_id = (ev_extra or {}).get("id")
         if extra_id and extra_id not in ctx["created_event_ids"]:
             ctx["created_event_ids"].append(extra_id)
 
     acl_read = call(["acl", "insert"], {"calendarId": ctx["calendar_id_acl"]}, {
         "role": "reader",
-        "scope": {"type": "user", "value": f"parity-read-{suffix}@example.com"},
+        "scope": {"type": "user", "value": f"parity-read-{ctx['suffix']}@example.com"},
     })
     ctx["rule_id_read"] = (acl_read or {}).get("id", "user:missing-read@example.com")
     if ctx["rule_id_read"] != "user:missing-read@example.com":
@@ -518,7 +719,7 @@ def _collect_real_context() -> dict[str, Any]:
 
     acl_delete = call(["acl", "insert"], {"calendarId": ctx["calendar_id_acl"]}, {
         "role": "reader",
-        "scope": {"type": "user", "value": f"parity-delete-{suffix}@example.com"},
+        "scope": {"type": "user", "value": f"parity-delete-{ctx['suffix']}@example.com"},
     })
     ctx["rule_id_delete"] = (acl_delete or {}).get("id", ctx["rule_id_read"])
     if ctx["rule_id_delete"] and ctx["rule_id_delete"] not in ctx["created_rule_ids"]:
@@ -528,7 +729,7 @@ def _collect_real_context() -> dict[str, Any]:
         ["events", "watch"],
         {"calendarId": ctx["calendar_id_events"]},
         {
-            "id": f"compare-stop-{suffix}",
+            "id": f"compare-stop-{ctx['suffix']}",
             "type": "web_hook",
             "address": "https://example.com/hook",
         },
@@ -540,17 +741,9 @@ def _collect_real_context() -> dict[str, Any]:
     return ctx
 
 
-def _collect_mock_context(client: TestClient) -> dict[str, Any]:
-    suffix = datetime.now().strftime("%H%M%S")
-    event_body, event_body_update, time_min, time_max = _build_event_bodies(suffix)
-
+def _collect_mock_context(client: TestClient, shared: dict[str, Any]) -> dict[str, Any]:
     ctx: dict[str, Any] = {
-        "suffix": suffix,
-        "setting": "timezone",
-        "event_body": event_body,
-        "event_body_update": event_body_update,
-        "time_min": time_min,
-        "time_max": time_max,
+        **shared,
         "created_calendar_ids": [],
         "created_event_ids": [],
         "created_rule_ids": [],
@@ -571,7 +764,7 @@ def _collect_mock_context(client: TestClient) -> dict[str, Any]:
             "POST",
             "/calendar/v3/calendars",
             body={
-                "summary": f"Mock Parity {label} {suffix}",
+                "summary": f"Mock Parity {label} {ctx['suffix']}",
                 "description": "",
                 "timeZone": "UTC",
             },
@@ -608,7 +801,11 @@ def _collect_mock_context(client: TestClient) -> dict[str, Any]:
 
     events_cal = create_calendar("Events")
     if not events_cal:
-        events_cal = writable_cal
+        fallback = [cid for cid in owned_secondary_ids if cid != delete_cal]
+        events_cal = fallback[0] if fallback else primary_id
+
+    if events_cal == delete_cal and primary_id != delete_cal:
+        events_cal = primary_id
 
     move_destination = primary_id
     if move_destination == events_cal:
@@ -629,37 +826,41 @@ def _collect_mock_context(client: TestClient) -> dict[str, Any]:
     ctx["calendar_list_insert_id"] = "primary"
     ctx["calendar_list_delete_id"] = primary_id
     ctx["move_destination_calendar_id"] = move_destination
+    ctx["has_writable_secondary"] = writable_cal != primary_id
+    ctx["has_delete_secondary"] = delete_cal != primary_id
+    ctx["uses_primary_events"] = events_cal == primary_id
+    ctx["has_distinct_move_destination"] = move_destination != events_cal
 
-    ev_read = call("POST", f"/calendar/v3/calendars/{ctx['calendar_id_events']}/events", body=event_body)
+    ev_read = call("POST", f"/calendar/v3/calendars/{ctx['calendar_id_events']}/events", body=ctx["event_body"])
     ctx["event_id_read"] = (ev_read or {}).get("id", "event-read-missing")
     if ctx["event_id_read"] != "event-read-missing":
         ctx["created_event_ids"].append(ctx["event_id_read"])
 
-    ev_delete = call("POST", f"/calendar/v3/calendars/{ctx['calendar_id_events']}/events", body=event_body)
+    ev_delete = call("POST", f"/calendar/v3/calendars/{ctx['calendar_id_events']}/events", body=ctx["event_body"])
     ctx["event_id_delete"] = (ev_delete or {}).get("id", ctx["event_id_read"])
     if ctx["event_id_delete"] and ctx["event_id_delete"] != ctx["event_id_read"]:
         ctx["created_event_ids"].append(ctx["event_id_delete"])
 
-    ev_move = call("POST", f"/calendar/v3/calendars/{ctx['calendar_id_events']}/events", body=event_body)
+    ev_move = call("POST", f"/calendar/v3/calendars/{ctx['calendar_id_events']}/events", body=ctx["event_body"])
     ctx["event_id_move"] = (ev_move or {}).get("id", ctx["event_id_read"])
     if ctx["event_id_move"] and ctx["event_id_move"] not in ctx["created_event_ids"]:
         ctx["created_event_ids"].append(ctx["event_id_move"])
 
-    ev_patch = call("POST", f"/calendar/v3/calendars/{ctx['calendar_id_events']}/events", body=event_body)
+    ev_patch = call("POST", f"/calendar/v3/calendars/{ctx['calendar_id_events']}/events", body=ctx["event_body"])
     ctx["event_id_patch"] = (ev_patch or {}).get("id", ctx["event_id_read"])
     if ctx["event_id_patch"] and ctx["event_id_patch"] not in ctx["created_event_ids"]:
         ctx["created_event_ids"].append(ctx["event_id_patch"])
 
     # Ensure list(maxResults=5) returns a paginated shape in both real and mock.
     for _ in range(2):
-        ev_extra = call("POST", f"/calendar/v3/calendars/{ctx['calendar_id_events']}/events", body=event_body)
+        ev_extra = call("POST", f"/calendar/v3/calendars/{ctx['calendar_id_events']}/events", body=ctx["event_body"])
         extra_id = (ev_extra or {}).get("id")
         if extra_id and extra_id not in ctx["created_event_ids"]:
             ctx["created_event_ids"].append(extra_id)
 
     acl_read = call("POST", f"/calendar/v3/calendars/{ctx['calendar_id_acl']}/acl", body={
         "role": "reader",
-        "scope": {"type": "user", "value": f"parity-read-{suffix}@example.com"},
+        "scope": {"type": "user", "value": f"parity-read-{ctx['suffix']}@example.com"},
     })
     ctx["rule_id_read"] = (acl_read or {}).get("id", "user:missing-read@example.com")
     if ctx["rule_id_read"] != "user:missing-read@example.com":
@@ -671,14 +872,14 @@ def _collect_mock_context(client: TestClient) -> dict[str, Any]:
 
     acl_delete = call("POST", f"/calendar/v3/calendars/{ctx['calendar_id_acl']}/acl", body={
         "role": "reader",
-        "scope": {"type": "user", "value": f"parity-delete-{suffix}@example.com"},
+        "scope": {"type": "user", "value": f"parity-delete-{ctx['suffix']}@example.com"},
     })
     ctx["rule_id_delete"] = (acl_delete or {}).get("id", ctx["rule_id_read"])
     if ctx["rule_id_delete"] and ctx["rule_id_delete"] not in ctx["created_rule_ids"]:
         ctx["created_rule_ids"].append(ctx["rule_id_delete"])
 
     watch = call("POST", f"/calendar/v3/calendars/{ctx['calendar_id_events']}/events/watch", body={
-        "id": f"compare-stop-{suffix}",
+        "id": f"compare-stop-{ctx['suffix']}",
         "type": "web_hook",
         "address": "https://example.com/hook",
     })
@@ -730,8 +931,9 @@ def main() -> int:
 
     client = _seed_mock_and_client()
     try:
-        real_ctx = _collect_real_context()
-        mock_ctx = _collect_mock_context(client)
+        shared = _shared_compare_context()
+        real_ctx = _collect_real_context(shared)
+        mock_ctx = _collect_mock_context(client, shared)
 
         results: list[dict[str, Any]] = []
         for endpoint_id, tokens in zip(endpoint_ids, leaves):
@@ -739,6 +941,42 @@ def main() -> int:
             method = schema.get("httpMethod", "GET")
             path = schema.get("path", "")
             if not path:
+                continue
+
+            environment_limited = _environment_limit_reason(endpoint_id, real_ctx)
+            if environment_limited:
+                results.append(
+                    {
+                        "id": endpoint_id,
+                        "in_mock_coverage": endpoint_id in coverage_ids,
+                        "method": method,
+                        "path": path,
+                        "real": {
+                            "status": None,
+                            "returncode": None,
+                            "keys": [],
+                            "error_reason": environment_limited,
+                            "error_message": None,
+                            "signature": None,
+                        },
+                        "mock": {
+                            "status": None,
+                            "keys": [],
+                            "error_reason": environment_limited,
+                            "error_message": None,
+                            "signature": None,
+                        },
+                        "parity": {
+                            "same_status": False,
+                            "same_status_class": False,
+                            "same_top_keys": False,
+                            "same_signature": False,
+                            "tenant_limited": False,
+                            "environment_limited": True,
+                            "excluded_from_scoring": True,
+                        },
+                    }
+                )
                 continue
 
             params_meta = schema.get("parameters", {})
@@ -751,24 +989,30 @@ def main() -> int:
             real_params, real_body = _build_request(endpoint_id, method, path_params, real_ctx)
             mock_params, mock_body = _build_request(endpoint_id, method, path_params, mock_ctx)
 
-            real = _real_call(tokens, real_params, real_body)
+            real = _real_call_for_endpoint(
+                endpoint_id,
+                tokens,
+                method,
+                path,
+                path_params,
+                real_params,
+                real_body,
+            )
             mock = _mock_call(client, method, path, path_params, mock_params, mock_body)
 
-            blocked_by_real_cli = (
-                endpoint_id in CLI_TRANSPORT_LIMITED_ENDPOINTS
-                and real.status == 411
-                and real.error_reason == "httpError"
-            )
             tenant_limited = (
                 endpoint_id == "calendar.calendars.insert"
                 and real.status == 403
                 and real.error_reason == "quotaExceeded"
             )
-            excluded_from_scoring = blocked_by_real_cli or tenant_limited
+            excluded_from_scoring = tenant_limited
 
             same_status = real.status == mock.status
             same_status_class = (real.status // 100) == (mock.status // 100)
             same_top_keys = real.keys == mock.keys
+            real_signature = _payload_signature(endpoint_id, real.raw)
+            mock_signature = _payload_signature(endpoint_id, mock.raw)
+            same_signature = real_signature == mock_signature if (real_signature is not None or mock_signature is not None) else True
 
             results.append(
                 {
@@ -782,19 +1026,22 @@ def main() -> int:
                         "keys": real.keys,
                         "error_reason": real.error_reason,
                         "error_message": real.error_message,
+                        "signature": real_signature,
                     },
                     "mock": {
                         "status": mock.status,
                         "keys": mock.keys,
                         "error_reason": mock.error_reason,
                         "error_message": mock.error_message,
+                        "signature": mock_signature,
                     },
                     "parity": {
                         "same_status": same_status,
                         "same_status_class": same_status_class,
                         "same_top_keys": same_top_keys,
-                        "blocked_by_real_cli": blocked_by_real_cli,
+                        "same_signature": same_signature,
                         "tenant_limited": tenant_limited,
+                        "environment_limited": False,
                         "excluded_from_scoring": excluded_from_scoring,
                     },
                 }
@@ -812,12 +1059,14 @@ def main() -> int:
         "same_status": sum(1 for r in results if r["parity"]["same_status"]),
         "same_status_class": sum(1 for r in results if r["parity"]["same_status_class"]),
         "same_top_keys": sum(1 for r in results if r["parity"]["same_top_keys"]),
+        "same_signature": sum(1 for r in results if r["parity"]["same_signature"]),
         "exact_parity": sum(
             1
             for r in results
             if r["parity"]["same_status"]
             and r["parity"]["same_status_class"]
             and r["parity"]["same_top_keys"]
+            and r["parity"]["same_signature"]
         ),
         "excluded_from_scoring": sum(1 for r in results if r["parity"]["excluded_from_scoring"]),
     }
@@ -829,6 +1078,7 @@ def main() -> int:
         and r["parity"]["same_status"]
         and r["parity"]["same_status_class"]
         and r["parity"]["same_top_keys"]
+        and r["parity"]["same_signature"]
     )
 
     payload = {
@@ -838,17 +1088,25 @@ def main() -> int:
     json_out.write_text(json.dumps(payload, indent=2))
 
     missing = [r["id"] for r in results if not r["in_mock_coverage"]]
-    status_class_mismatch = [r for r in results if not r["parity"]["same_status_class"]]
+    status_class_mismatch = [
+        r
+        for r in results
+        if not r["parity"]["same_status_class"] and r["real"]["status"] is not None and r["mock"]["status"] is not None
+    ]
     excluded = [r for r in results if r["parity"]["excluded_from_scoring"]]
     key_mismatch_2xx = [
         r
         for r in results
         if (
+            r["real"]["status"] is not None
+            and r["mock"]["status"] is not None
+            and
             r["real"]["status"] // 100 == 2
             and r["mock"]["status"] // 100 == 2
             and not r["parity"]["same_top_keys"]
         )
     ]
+    signature_mismatch = [r for r in results if not r["parity"]["same_signature"]]
 
     lines: list[str] = []
     lines.append(f"# gws Calendar real vs mock comparison ({day})")
@@ -860,6 +1118,7 @@ def main() -> int:
         "same_status",
         "same_status_class",
         "same_top_keys",
+        "same_signature",
         "exact_parity",
         "excluded_from_scoring",
         "scored_commands",
@@ -870,7 +1129,7 @@ def main() -> int:
 
     lines.append(f"## Excluded from scoring ({len(excluded)})")
     for r in excluded:
-        reason = "real-cli-transport-limit" if r["parity"]["blocked_by_real_cli"] else "tenant-limited"
+        reason = "environment-limited" if r["parity"]["environment_limited"] else "tenant-limited"
         lines.append(
             f"- {r['id']}: {reason}, real={r['real']['status']} ({r['real']['error_reason']}), "
             f"mock={r['mock']['status']}"
@@ -897,9 +1156,24 @@ def main() -> int:
         )
     lines.append("")
 
+    lines.append("## Signature mismatches")
+    for r in signature_mismatch:
+        lines.append(
+            f"- {r['id']}: real_signature={r['real']['signature']} | mock_signature={r['mock']['signature']}"
+        )
+    lines.append("")
+
     lines.append("## Command-by-command status")
     for r in results:
-        tag = "OK" if (r["parity"]["same_status"] and r["parity"]["same_top_keys"]) else "DIFF"
+        tag = (
+            "OK"
+            if (
+                r["parity"]["same_status"]
+                and r["parity"]["same_top_keys"]
+                and r["parity"]["same_signature"]
+            )
+            else "DIFF"
+        )
         lines.append(f"- {r['id']}: real={r['real']['status']}, mock={r['mock']['status']} [{tag}]")
     lines.append("")
 

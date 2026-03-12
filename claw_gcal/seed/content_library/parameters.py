@@ -12,6 +12,9 @@ PROJECT_NAMES = [
     "Onboarding Flow",
     "Hiring Funnel",
     "Launch Readiness",
+    "Data Retention Controls",
+    "SOC 2 Evidence Pack",
+    "Vendor Access Review",
 ]
 
 MEETING_TOPICS = [
@@ -24,6 +27,10 @@ MEETING_TOPICS = [
     "customer feedback",
     "headcount planning",
     "sales enablement",
+    "vendor access",
+    "compliance evidence",
+    "board prep",
+    "phishing response",
 ]
 
 CITY_NAMES = [
@@ -34,6 +41,8 @@ CITY_NAMES = [
     "Boston",
     "Chicago",
     "Denver",
+    "Los Angeles",
+    "Portland",
 ]
 
 ROOM_NAMES = [
@@ -43,4 +52,6 @@ ROOM_NAMES = [
     "War Room",
     "Meet Room A",
     "Board Room C",
+    "HQ-3F Neptune",
+    "Security Lab",
 ]

@@ -43,6 +43,26 @@ TRAVEL_EVENT_POOL: list[dict] = [
         "attendees_pool": ["carlos", "omar", "nina"],
         "attendees_count_range": (1, 3),
     },
+    {
+        "summary": "Airport buffer: {city}",
+        "calendar": "travel",
+        "description": "Protect buffer time for traffic, check-in, and delayed boarding.",
+        "location": "Airport",
+        "days_from_now_range": (-45, 60),
+        "start_hour_choices": [5, 6, 19, 20],
+        "duration_hours_choices": [1, 1.5],
+    },
+    {
+        "summary": "Partner breakfast: {city}",
+        "calendar": "travel",
+        "description": "Early relationship touchpoint before a packed day of travel or meetings.",
+        "location": "{city}",
+        "days_from_now_range": (-20, 45),
+        "start_hour_choices": [7, 8],
+        "duration_hours_choices": [1],
+        "attendees_pool": ["carlos", "nina", "kevin"],
+        "attendees_count_range": (1, 2),
+    },
 ]
 
 TRAVEL_HEAVY_NEEDLE_EVENTS: list[dict] = [

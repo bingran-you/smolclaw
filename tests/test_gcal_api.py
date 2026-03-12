@@ -334,7 +334,7 @@ class TestAcl:
 
 class TestEvents:
     def test_update_import_instances_move_quickadd_delete(self, gcal_client):
-        c = gcal_client.post("/calendar/v3/calendars", json={"summary": "Evt Cal"})
+        c = gcal_client.post("/calendar/v3/calendars", json={"summary": "Evt Cal", "timeZone": "UTC"})
         cal_id = c.json()["id"]
         now = datetime.now(timezone.utc).replace(microsecond=0)
         start = _rfc3339(now + timedelta(days=1))
@@ -375,16 +375,20 @@ class TestEvents:
             params={"destination": "primary"},
         )
         assert move.status_code == 200
+        assert move.json()["status"] == "cancelled"
 
         quick = gcal_client.post(
             f"/calendar/v3/calendars/{cal_id}/events/quickAdd",
             params={"text": "Lunch tomorrow noon"},
         )
         assert quick.status_code == 200
-        assert quick.json()["summary"] == "Lunch tomorrow noon"
+        assert quick.json()["summary"] == "Lunch"
+        assert quick.json()["start"]["dateTime"].endswith("T12:00:00Z")
 
         moved_get = gcal_client.get(f"/calendar/v3/calendars/primary/events/{event_id}")
         assert moved_get.status_code == 200
+        assert moved_get.json()["status"] == "confirmed"
+        assert moved_get.json()["sequence"] == 0
         delete = gcal_client.delete(f"/calendar/v3/calendars/primary/events/{event_id}")
         assert delete.status_code == 204
 

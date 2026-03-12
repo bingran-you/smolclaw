@@ -38,6 +38,34 @@ INCIDENT_DRILL_TEMPLATE = (
     "- Document gaps in runbooks, ownership, or tooling"
 )
 
+SECURITY_DRILL_TEMPLATE = (
+    "Security checklist:\n"
+    "- Review high-signal alerts tied to {project}\n"
+    "- Confirm escalation paths, access scope, and customer impact\n"
+    "- Capture follow-up remediation owners before closing the review"
+)
+
+ACCESS_REVIEW_TEMPLATE = (
+    "Access review:\n"
+    "- Inspect admin roles and stale shared access related to {topic}\n"
+    "- Verify approvals for exceptions, vendors, and temporary grants\n"
+    "- Document anything that must be revoked this week"
+)
+
+COMPLIANCE_CHECK_TEMPLATE = (
+    "Audit prep:\n"
+    "- Check evidence completeness for {project}\n"
+    "- Confirm sign-offs, screenshots, and linked tickets are current\n"
+    "- Flag any control that still needs an owner before audit handoff"
+)
+
+VENDOR_RISK_TEMPLATE = (
+    "Vendor checkpoint:\n"
+    "- Review open security questionnaires and shared data paths\n"
+    "- Confirm who still needs access to {project} environments\n"
+    "- Capture contract or remediation blockers for leadership follow-up"
+)
+
 LAUNCH_WAR_ROOM_TEMPLATE = (
     "Launch checklist:\n"
     "- Review traffic ramp and support coverage\n"
