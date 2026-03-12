@@ -82,6 +82,15 @@ smolclaw-gcal serve --port 9002      # custom Calendar port
 
 ## Development
 
+Focused validation commands:
+
+```bash
+pytest tests/test_gcal_api.py tests/test_gcal_conformance.py tests/test_gcal_seed.py
+python scripts/validate_gcal_seed.py --scenario long_context
+pytest tests/test_api.py tests/test_conformance.py tests/test_settings.py tests/test_mime.py
+python scripts/validate_seed.py
+```
+
 ```bash
 git clone https://github.com/benchflow-ai/smolclaw.git
 cd smolclaw

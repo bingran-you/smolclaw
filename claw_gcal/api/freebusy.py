@@ -2,13 +2,20 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from claw_gcal.models import Calendar, Event
 
+from .events import (
+    _as_aware_utc,
+    _deserialize_recurrence,
+    _iter_recurrence_starts,
+    _parse_rrule,
+    _recurrence_emit_hint,
+)
 from .deps import get_db, resolve_actor_user_id
 from .schemas import (
     BusyTimeRange,
@@ -53,6 +60,58 @@ def _resolve_calendar(db: Session, calendar_id: str, actor_user_id: str) -> Cale
     ).first()
 
 
+def _busy_ranges_for_event(
+    *,
+    event: Event,
+    time_min: datetime,
+    time_max: datetime,
+) -> list[BusyTimeRange]:
+    if event.status == "cancelled":
+        return []
+
+    recurrence = _deserialize_recurrence(event.recurrence_json)
+    rule = _parse_rrule(recurrence)
+    if not rule:
+        start_dt = _as_aware_utc(event.start_dt)
+        end_dt = _as_aware_utc(event.end_dt)
+        if end_dt <= time_min or start_dt >= time_max:
+            return []
+        return [
+            BusyTimeRange(
+                start=_iso(max(start_dt, time_min)),
+                end=_iso(min(end_dt, time_max)),
+            )
+        ]
+
+    duration = _as_aware_utc(event.end_dt) - _as_aware_utc(event.start_dt)
+    max_emits = _recurrence_emit_hint(
+        start_dt=event.start_dt,
+        rule=rule,
+        target_dt=time_max + duration + timedelta(days=1),
+    )
+
+    busy: list[BusyTimeRange] = []
+    for start_dt in _iter_recurrence_starts(
+        start_dt=event.start_dt,
+        rule=rule,
+        max_emits=max_emits,
+    ):
+        start_dt = _as_aware_utc(start_dt)
+        end_dt = _as_aware_utc(start_dt + duration)
+        if end_dt <= time_min:
+            continue
+        if start_dt >= time_max:
+            break
+        busy.append(
+            BusyTimeRange(
+                start=_iso(max(start_dt, time_min)),
+                end=_iso(min(end_dt, time_max)),
+            )
+        )
+
+    return busy
+
+
 @router.post("/freeBusy", response_model=FreeBusyResponse, response_model_exclude_none=True)
 def freebusy_query(
     body: FreeBusyRequest,
@@ -76,17 +135,17 @@ def freebusy_query(
 
         events = db.query(Event).filter(
             Event.calendar_id == cal.id,
-            Event.status != "cancelled",
-            Event.end_dt > time_min,
-            Event.start_dt < time_max,
         ).order_by(Event.start_dt.asc()).all()
-        busy = [
-            BusyTimeRange(
-                start=_iso(max(_as_aware_utc(e.start_dt), time_min)),
-                end=_iso(min(_as_aware_utc(e.end_dt), time_max)),
+        busy: list[BusyTimeRange] = []
+        for event in events:
+            busy.extend(
+                _busy_ranges_for_event(
+                    event=event,
+                    time_min=time_min,
+                    time_max=time_max,
+                )
             )
-            for e in events
-        ]
+        busy.sort(key=lambda slot: (slot.start, slot.end))
         calendars[item.id] = FreeBusyCalendarResponse(busy=busy)
 
     return FreeBusyResponse(

@@ -372,6 +372,43 @@ class TestEvents:
         assert all(item["recurringEventId"] == event_id for item in data["items"])
         assert all("recurrence" not in item for item in data["items"])
 
+    def test_get_recurring_instance_by_instance_id(self, gcal_client):
+        c = gcal_client.post("/calendar/v3/calendars", json={"summary": "Instance Lookup"})
+        assert c.status_code == 200
+        cal_id = c.json()["id"]
+
+        now = datetime.now(timezone.utc).replace(microsecond=0)
+        start = _rfc3339(now + timedelta(days=1))
+        end = _rfc3339(now + timedelta(days=1, hours=1))
+
+        ins = gcal_client.post(
+            f"/calendar/v3/calendars/{cal_id}/events",
+            json={
+                "summary": "Recurring Instance Lookup",
+                "start": {"dateTime": start},
+                "end": {"dateTime": end},
+                "recurrence": ["RRULE:FREQ=DAILY;COUNT=3"],
+            },
+        )
+        assert ins.status_code == 200
+        parent_id = ins.json()["id"]
+
+        listed = gcal_client.get(
+            f"/calendar/v3/calendars/{cal_id}/events",
+            params={"singleEvents": True, "orderBy": "startTime"},
+        )
+        assert listed.status_code == 200
+        instance = listed.json()["items"][1]
+
+        fetched = gcal_client.get(
+            f"/calendar/v3/calendars/{cal_id}/events/{instance['id']}",
+        )
+        assert fetched.status_code == 200
+        data = fetched.json()
+        assert data["id"] == instance["id"]
+        assert data["recurringEventId"] == parent_id
+        assert data["originalStartTime"] == instance["originalStartTime"]
+
     def test_all_day_events_use_date_fields(self, gcal_client):
         create = gcal_client.post(
             "/calendar/v3/calendars/primary/events",
@@ -528,6 +565,39 @@ class TestSettingsColorsFreebusyChannels:
         assert resp.status_code == 200
         data = resp.json()
         assert "calendars" in data and "primary" in data["calendars"]
+
+    def test_freebusy_expands_recurring_events(self, gcal_client):
+        c = gcal_client.post("/calendar/v3/calendars", json={"summary": "Busy Recurrence"})
+        assert c.status_code == 200
+        cal_id = c.json()["id"]
+
+        now = datetime.now(timezone.utc).replace(microsecond=0)
+        start = _rfc3339(now + timedelta(days=1))
+        end = _rfc3339(now + timedelta(days=1, hours=1))
+        ins = gcal_client.post(
+            f"/calendar/v3/calendars/{cal_id}/events",
+            json={
+                "summary": "Recurring Busy Block",
+                "start": {"dateTime": start},
+                "end": {"dateTime": end},
+                "recurrence": ["RRULE:FREQ=DAILY;COUNT=3"],
+            },
+        )
+        assert ins.status_code == 200
+
+        resp = gcal_client.post(
+            "/calendar/v3/freeBusy",
+            json={
+                "timeMin": _rfc3339(now),
+                "timeMax": _rfc3339(now + timedelta(days=5)),
+                "items": [{"id": cal_id}],
+            },
+        )
+        assert resp.status_code == 200
+        busy = resp.json()["calendars"][cal_id]["busy"]
+        assert len(busy) == 3
+        assert busy[0]["start"] == start
+        assert busy[-1]["end"] == _rfc3339(now + timedelta(days=3, hours=1))
 
     def test_channels_stop_unknown(self, gcal_client):
         resp = gcal_client.post(

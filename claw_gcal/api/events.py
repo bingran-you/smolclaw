@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import uuid
 from datetime import datetime, time, timedelta, timezone
 from typing import Any, Iterator
@@ -122,6 +123,8 @@ _WEEKDAY_MAP: dict[str, int] = {
     "SA": 5,
     "SU": 6,
 }
+
+_INSTANCE_ID_PATTERN = re.compile(r"^(?P<base>.+)_(?P<stamp>\d{8}T\d{6}Z)$")
 
 
 def _parse_until(value: str) -> datetime | None:
@@ -279,6 +282,47 @@ def _iter_recurrence_starts(
             until=until,
             max_emits=max_emits,
         )
+
+
+def _recurrence_emit_hint(
+    *,
+    start_dt: datetime,
+    rule: dict[str, Any],
+    target_dt: datetime | None,
+    minimum: int = 128,
+) -> int:
+    count = rule.get("count")
+    if count is not None:
+        return max(int(count), minimum)
+    if target_dt is None:
+        return max(minimum, 1000)
+
+    start_dt = _as_aware_utc(start_dt)
+    target_dt = _as_aware_utc(target_dt)
+    if target_dt <= start_dt:
+        return minimum
+
+    span_days = max(0, int((target_dt - start_dt).days))
+    interval = max(1, int(rule.get("interval", 1)))
+    if rule["freq"] == "DAILY":
+        return max(minimum, (span_days // interval) + 32)
+
+    weekly_slots = max(1, len(rule.get("byday") or []))
+    span_weeks = max(0, span_days // 7)
+    return max(minimum, ((span_weeks // interval) + 1) * weekly_slots + 32)
+
+
+def _parse_instance_event_id(event_id: str) -> tuple[str, datetime] | None:
+    match = _INSTANCE_ID_PATTERN.fullmatch(event_id)
+    if not match:
+        return None
+    try:
+        start_dt = datetime.strptime(match.group("stamp"), "%Y%m%dT%H%M%SZ").replace(
+            tzinfo=timezone.utc
+        )
+    except ValueError:
+        return None
+    return match.group("base"), start_dt
 
 
 def _to_instance_resource(
@@ -477,6 +521,61 @@ def _expand_single_events(
     return expanded
 
 
+def _resolve_event_resource(
+    *,
+    db: Session,
+    calendar: Calendar,
+    event_id: str,
+) -> EventResource | None:
+    event = db.query(Event).filter(
+        Event.id == event_id,
+        Event.calendar_id == calendar.id,
+    ).first()
+    if event:
+        return _to_event_resource(event)
+
+    parsed = _parse_instance_event_id(event_id)
+    if not parsed:
+        return None
+
+    parent_id, instance_start = parsed
+    parent = db.query(Event).filter(
+        Event.id == parent_id,
+        Event.calendar_id == calendar.id,
+    ).first()
+    if not parent:
+        return None
+
+    recurrence = _deserialize_recurrence(parent.recurrence_json)
+    rule = _parse_rrule(recurrence)
+    if not rule:
+        return None
+
+    duration = _as_aware_utc(parent.end_dt) - _as_aware_utc(parent.start_dt)
+    max_emits = _recurrence_emit_hint(
+        start_dt=parent.start_dt,
+        rule=rule,
+        target_dt=instance_start + duration,
+    )
+    for start_dt in _iter_recurrence_starts(
+        start_dt=parent.start_dt,
+        rule=rule,
+        max_emits=max_emits,
+    ):
+        start_dt = _as_aware_utc(start_dt)
+        if start_dt == instance_start:
+            return _to_instance_resource(
+                event=parent,
+                start_dt=start_dt,
+                end_dt=start_dt + duration,
+                time_zone=calendar.timezone,
+            )
+        if start_dt > instance_start:
+            break
+
+    return None
+
+
 @router.get(
     "/calendars/{calendarId}/events",
     response_model=EventListResponse,
@@ -582,13 +681,14 @@ def events_get(
     _actor_user_id: str = Depends(resolve_actor_user_id),
 ):
     calendar = _resolve_calendar_for_actor(db, calendarId, _actor_user_id)
-    event = db.query(Event).filter(
-        Event.id == eventId,
-        Event.calendar_id == calendar.id,
-    ).first()
-    if not event:
+    resource = _resolve_event_resource(
+        db=db,
+        calendar=calendar,
+        event_id=eventId,
+    )
+    if resource is None:
         raise HTTPException(404, "Event not found")
-    return _to_event_resource(event)
+    return resource
 
 
 def _create_event_from_body(
