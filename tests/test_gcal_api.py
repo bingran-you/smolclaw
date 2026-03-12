@@ -193,9 +193,9 @@ class TestAcl:
         c = gcal_client.post("/calendar/v3/calendars", json={"summary": "ACL Cal"})
         cal_id = c.json()["id"]
 
-        l = gcal_client.get(f"/calendar/v3/calendars/{cal_id}/acl")
-        assert l.status_code == 200
-        assert "items" in l.json()
+        acl_list_resp = gcal_client.get(f"/calendar/v3/calendars/{cal_id}/acl")
+        assert acl_list_resp.status_code == 200
+        assert "items" in acl_list_resp.json()
 
         ins = gcal_client.post(
             f"/calendar/v3/calendars/{cal_id}/acl",
@@ -301,8 +301,10 @@ class TestEvents:
         assert quick.status_code == 200
         assert quick.json()["summary"] == "Lunch tomorrow noon"
 
+        moved_get = gcal_client.get(f"/calendar/v3/calendars/primary/events/{event_id}")
+        assert moved_get.status_code == 200
         delete = gcal_client.delete(f"/calendar/v3/calendars/primary/events/{event_id}")
-        assert delete.status_code in (204, 404)
+        assert delete.status_code == 204
 
     def test_watch(self, gcal_client):
         r = gcal_client.post(
@@ -430,9 +432,9 @@ class TestEvents:
 
 class TestSettingsColorsFreebusyChannels:
     def test_settings_list_get_watch(self, gcal_client):
-        l = gcal_client.get("/calendar/v3/users/me/settings")
-        assert l.status_code == 200
-        assert "items" in l.json()
+        settings_list_resp = gcal_client.get("/calendar/v3/users/me/settings")
+        assert settings_list_resp.status_code == 200
+        assert "items" in settings_list_resp.json()
 
         g = gcal_client.get("/calendar/v3/users/me/settings/timezone")
         assert g.status_code == 200

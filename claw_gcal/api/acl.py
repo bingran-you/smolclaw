@@ -30,6 +30,11 @@ def _md5_hex(text: str) -> str:
     return hashlib.md5(text.encode("utf-8")).hexdigest()
 
 
+def _compute_acl_etag(rule_id: str, role: str, scope_type: str, scope_value: str) -> str:
+    seed = f"{rule_id}:{role}:{scope_type}:{scope_value}"
+    return f'"{_md5_hex(seed)}"'
+
+
 def _resolve_calendar_for_actor(db: Session, calendar_id: str, actor_user_id: str) -> Calendar:
     if calendar_id == "primary":
         calendar = db.query(Calendar).filter(
@@ -155,7 +160,12 @@ def acl_insert(
         scope_type=body.scope.type,
         scope_value=body.scope.value or "",
         role=body.role,
-        etag=f'"{_md5_hex(f"{storage_id}:{body.role}:{body.scope.type}:{body.scope.value or ""}")}"',
+        etag=_compute_acl_etag(
+            storage_id,
+            body.role,
+            body.scope.type,
+            body.scope.value or "",
+        ),
     )
     db.add(rule)
     db.commit()
@@ -206,7 +216,7 @@ def acl_patch(
     rule.scope_type = scope.type
     rule.scope_value = scope.value or ""
     rule.role = role
-    rule.etag = f'"{_md5_hex(f"{rule.id}:{rule.role}:{rule.scope_type}:{rule.scope_value}")}"'
+    rule.etag = _compute_acl_etag(rule.id, rule.role, rule.scope_type, rule.scope_value)
 
     db.commit()
     db.refresh(rule)
@@ -248,7 +258,7 @@ def acl_update(
     rule.scope_type = body.scope.type
     rule.scope_value = body.scope.value or ""
     rule.role = body.role
-    rule.etag = f'"{_md5_hex(f"{rule.id}:{rule.role}:{rule.scope_type}:{rule.scope_value}")}"'
+    rule.etag = _compute_acl_etag(rule.id, rule.role, rule.scope_type, rule.scope_value)
     db.commit()
     db.refresh(rule)
     return _rule_to_resource(rule)
