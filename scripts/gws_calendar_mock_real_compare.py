@@ -9,6 +9,7 @@ Outputs:
 from __future__ import annotations
 
 import json
+import os
 import re
 import subprocess
 import sys
@@ -104,7 +105,8 @@ def _real_call(tokens: list[str], params: dict[str, Any] | None, body: Any | Non
     if body is not None:
         cmd.extend(["--json", json.dumps(body, separators=(",", ":"))])
 
-    env = {"GOOGLE_WORKSPACE_CLI_ACCOUNT": REAL_ACCOUNT}
+    env = os.environ.copy()
+    env["GOOGLE_WORKSPACE_CLI_ACCOUNT"] = REAL_ACCOUNT
     rc, stdout, stderr = _run(cmd, env=env)
     payload = _extract_json(stdout) or _extract_json(stderr)
     payload = _normalize_wrapper_payload(payload)
@@ -353,7 +355,6 @@ def _build_request(endpoint_id: str, method: str, path_params: list[str], ctx: d
                 "id": ctx.get("channel_id", "missing-channel"),
                 "resourceId": ctx.get("channel_resource_id", "missing-resource"),
             }
-
     return params, body
 
 

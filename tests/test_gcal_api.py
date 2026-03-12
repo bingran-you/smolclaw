@@ -97,6 +97,25 @@ class TestCalendarList:
         assert put.status_code == 200
         assert put.json()["selected"] is True
 
+    def test_patch_update_include_description_key_for_secondary(self, gcal_client):
+        c = gcal_client.post("/calendar/v3/calendars", json={"summary": "NoDesc"})
+        assert c.status_code == 200
+        cal_id = c.json()["id"]
+
+        patch = gcal_client.patch(
+            f"/calendar/v3/users/me/calendarList/{cal_id}",
+            json={"selected": False},
+        )
+        assert patch.status_code == 200
+        assert "description" in patch.json()
+
+        put = gcal_client.put(
+            f"/calendar/v3/users/me/calendarList/{cal_id}",
+            json={"selected": True},
+        )
+        assert put.status_code == 200
+        assert "description" in put.json()
+
     def test_delete_owned_calendar_list_entry_forbidden(self, gcal_client):
         c = gcal_client.post("/calendar/v3/calendars", json={"summary": "OwnedCL"})
         cal_id = c.json()["id"]
@@ -144,6 +163,18 @@ class TestCalendars:
 
         delete = gcal_client.delete(f"/calendar/v3/calendars/{cal_id}")
         assert delete.status_code == 204
+
+    def test_patch_includes_description_key_for_secondary(self, gcal_client):
+        create = gcal_client.post("/calendar/v3/calendars", json={"summary": "Cal Desc"})
+        assert create.status_code == 200
+        cal_id = create.json()["id"]
+
+        patch = gcal_client.patch(
+            f"/calendar/v3/calendars/{cal_id}",
+            json={"summary": "Cal Desc Patched"},
+        )
+        assert patch.status_code == 200
+        assert "description" in patch.json()
 
     def test_clear_primary(self, gcal_client):
         resp = gcal_client.post("/calendar/v3/calendars/primary/clear")

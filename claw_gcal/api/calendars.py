@@ -64,11 +64,19 @@ def _default_notification_settings() -> NotificationSettings:
     )
 
 
-def _to_calendar_entry(calendar: Calendar, *, data_owner: str | None = None) -> CalendarListEntry:
+def _to_calendar_entry(
+    calendar: Calendar,
+    *,
+    data_owner: str | None = None,
+    include_empty_description: bool = False,
+) -> CalendarListEntry:
     bg, fg = _calendar_colors(calendar)
     summary_override = calendar.summary_override if calendar.summary_override else None
     include_data_owner = (not calendar.is_primary) and bool(data_owner)
-    include_description = (not calendar.is_primary) and bool(calendar.description)
+    include_description = (
+        not calendar.is_primary
+        and (bool(calendar.description) or include_empty_description)
+    )
 
     return CalendarListEntry(
         etag=_etag_for_calendar(calendar),
@@ -95,9 +103,17 @@ def _to_calendar_entry(calendar: Calendar, *, data_owner: str | None = None) -> 
     )
 
 
-def _to_calendar_resource(calendar: Calendar, *, data_owner: str | None = None) -> CalendarResource:
+def _to_calendar_resource(
+    calendar: Calendar,
+    *,
+    data_owner: str | None = None,
+    include_empty_description: bool = False,
+) -> CalendarResource:
     include_data_owner = (not calendar.is_primary) and bool(data_owner)
-    include_description = (not calendar.is_primary) and bool(calendar.description)
+    include_description = (
+        not calendar.is_primary
+        and (bool(calendar.description) or include_empty_description)
+    )
     return CalendarResource(
         etag=_etag_for_calendar(calendar),
         id=calendar.id,
@@ -285,7 +301,12 @@ def calendar_list_patch(
     _apply_calendar_list_mutation(calendar, body, is_update=False)
     db.commit()
     db.refresh(calendar)
-    return _to_calendar_entry(calendar, data_owner=_owner_email(db, _user_id))
+    # Real API keeps `description` in patch response for secondary calendars.
+    return _to_calendar_entry(
+        calendar,
+        data_owner=_owner_email(db, _user_id),
+        include_empty_description=True,
+    )
 
 
 @router.put(
@@ -304,7 +325,12 @@ def calendar_list_update(
     _apply_calendar_list_mutation(calendar, body, is_update=True)
     db.commit()
     db.refresh(calendar)
-    return _to_calendar_entry(calendar, data_owner=_owner_email(db, _user_id))
+    # Real API keeps `description` in update response for secondary calendars.
+    return _to_calendar_entry(
+        calendar,
+        data_owner=_owner_email(db, _user_id),
+        include_empty_description=True,
+    )
 
 
 @router.delete("/users/{userId}/calendarList/{calendarId}", status_code=status.HTTP_204_NO_CONTENT)
@@ -431,7 +457,12 @@ def calendars_patch(
         calendar.auto_accept_invitations = body.autoAcceptInvitations
     db.commit()
     db.refresh(calendar)
-    return _to_calendar_resource(calendar, data_owner=_owner_email(db, _user_id))
+    # Real API includes `description` in patch response for secondary calendars.
+    return _to_calendar_resource(
+        calendar,
+        data_owner=_owner_email(db, _user_id),
+        include_empty_description=True,
+    )
 
 
 @router.put("/calendars/{calendarId}", response_model=CalendarResource, response_model_exclude_none=True)
