@@ -94,6 +94,7 @@ def _deserialize_recurrence(raw: str) -> list[str] | None:
 def _to_event_resource(event: Event) -> EventResource:
     tz = event.calendar.timezone if event.calendar else "UTC"
     actor_email = event.user.email_address if event.user else ""
+    organizer_name = event.calendar.summary if event.calendar else None
 
     recurrence = _deserialize_recurrence(event.recurrence_json)
     original_start = (
@@ -117,7 +118,7 @@ def _to_event_resource(event: Event) -> EventResource:
         start=EventDateTime(dateTime=_iso(event.start_dt), timeZone=tz),
         end=EventDateTime(dateTime=_iso(event.end_dt), timeZone=tz),
         creator=EventActor(email=actor_email, self=True) if actor_email else None,
-        organizer=EventActor(email=actor_email, self=True) if actor_email else None,
+        organizer=EventActor(email=actor_email, self=True, displayName=organizer_name) if actor_email else None,
         reminders=EventReminders(useDefault=True),
         eventType="default",
         recurrence=recurrence,

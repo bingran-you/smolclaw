@@ -67,17 +67,19 @@ def _default_notification_settings() -> NotificationSettings:
 def _to_calendar_entry(calendar: Calendar, *, data_owner: str | None = None) -> CalendarListEntry:
     bg, fg = _calendar_colors(calendar)
     summary_override = calendar.summary_override if calendar.summary_override else None
+    include_data_owner = (not calendar.is_primary) and bool(data_owner)
+    include_description = (not calendar.is_primary) and bool(calendar.description)
 
     return CalendarListEntry(
         etag=_etag_for_calendar(calendar),
         id=calendar.id,
         summary=calendar.summary,
-        description=calendar.description or None,
+        description=calendar.description if include_description else None,
         location=calendar.location or None,
         timeZone=calendar.timezone,
         accessRole=calendar.access_role,
         primary=True if calendar.is_primary else None,
-        selected=calendar.selected,
+        selected=True if calendar.selected else None,
         hidden=calendar.hidden if calendar.hidden else None,
         autoAcceptInvitations=calendar.auto_accept_invitations or None,
         colorId=calendar.color_id,
@@ -88,21 +90,23 @@ def _to_calendar_entry(calendar: Calendar, *, data_owner: str | None = None) -> 
             [ReminderOverride(method="popup", minutes=10)] if calendar.is_primary else []
         ),
         notificationSettings=_default_notification_settings() if calendar.is_primary else None,
-        dataOwner=data_owner,
+        dataOwner=data_owner if include_data_owner else None,
         summaryOverride=summary_override,
     )
 
 
 def _to_calendar_resource(calendar: Calendar, *, data_owner: str | None = None) -> CalendarResource:
+    include_data_owner = (not calendar.is_primary) and bool(data_owner)
+    include_description = (not calendar.is_primary) and bool(calendar.description)
     return CalendarResource(
         etag=_etag_for_calendar(calendar),
         id=calendar.id,
         summary=calendar.summary,
-        description=calendar.description or None,
+        description=calendar.description if include_description else None,
         location=calendar.location or None,
         timeZone=calendar.timezone,
         conferenceProperties=ConferenceProperties(),
-        dataOwner=data_owner,
+        dataOwner=data_owner if include_data_owner else None,
         autoAcceptInvitations=calendar.auto_accept_invitations or None,
     )
 
@@ -224,6 +228,8 @@ def calendar_list_insert(
     if not body.id:
         raise HTTPException(400, "Missing required field: id")
     calendar = _resolve_calendar(db, _user_id, body.id)
+    if body.id == "primary" or calendar.is_primary:
+        raise HTTPException(400, "Invalid resource id value.")
 
     calendar.hidden = False
     if body.selected is None:

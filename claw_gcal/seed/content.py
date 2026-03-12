@@ -59,7 +59,7 @@ CALENDAR_TEMPLATES: list[dict] = [
     {
         "key": "primary",
         "summary": "{email}",
-        "description": "Primary calendar",
+        "description": "",
         "timezone": "UTC",
         "accessRole": "owner",
         "primary": True,

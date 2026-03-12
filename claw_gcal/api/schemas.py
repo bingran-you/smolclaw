@@ -38,7 +38,7 @@ class CalendarListEntry(BaseModel):
     timeZone: str
     accessRole: str
     primary: bool | None = None
-    selected: bool = True
+    selected: bool | None = True
     colorId: str | None = None
     backgroundColor: str | None = None
     foregroundColor: str | None = None
@@ -119,8 +119,11 @@ class EventDateTime(BaseModel):
 
 
 class EventActor(BaseModel):
+    model_config = {"exclude_none": True}
+
     email: str
     self: bool = True
+    displayName: str | None = None
 
 
 class EventReminders(BaseModel):
