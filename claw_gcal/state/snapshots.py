@@ -32,6 +32,9 @@ def _serialize_events(db: Session, user_id: str) -> list[dict]:
             "recurrence": e.recurrence_json,
             "recurringEventId": e.recurring_event_id,
             "originalStartTime": e.original_start_time,
+            # Preserve original timestamps for round-trip fidelity.
+            "created": e.created_at.isoformat(),
+            "updated": e.updated_at.isoformat(),
         }
         for e in events
     ]
@@ -123,10 +126,20 @@ def restore_snapshot(name: str) -> bool:
     return True
 
 
+def _parse_iso_datetime(value: str | None, fallback: datetime) -> datetime:
+    if not value:
+        return fallback
+    try:
+        dt = datetime.fromisoformat(value)
+    except (TypeError, ValueError):
+        return fallback
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
+
+
 def _restore_from_state(state: dict):
     """Rebuild DB from a state dict."""
-    from datetime import datetime
-
     from claw_gcal.models import Base, get_engine
 
     engine = get_engine()
@@ -180,6 +193,7 @@ def _restore_from_state(state: dict):
                 )
 
             for event in user_data.get("events", []):
+                fallback_now = datetime.now(timezone.utc)
                 db.add(
                     Event(
                         id=event["id"],
@@ -189,11 +203,11 @@ def _restore_from_state(state: dict):
                         description=event.get("description", ""),
                         location=event.get("location", ""),
                         status=event.get("status", "confirmed"),
-                        start_dt=datetime.fromisoformat(event["start"]),
-                        end_dt=datetime.fromisoformat(event["end"]),
+                        start_dt=_parse_iso_datetime(event.get("start"), fallback_now),
+                        end_dt=_parse_iso_datetime(event.get("end"), fallback_now),
                         attendees_json=event.get("attendees", "[]"),
-                        created_at=datetime.now(timezone.utc),
-                        updated_at=datetime.now(timezone.utc),
+                        created_at=_parse_iso_datetime(event.get("created"), fallback_now),
+                        updated_at=_parse_iso_datetime(event.get("updated"), fallback_now),
                         etag=event.get("etag", ""),
                         i_cal_uid=event.get("iCalUID", ""),
                         sequence=event.get("sequence", 0),

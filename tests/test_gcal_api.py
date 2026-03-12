@@ -307,6 +307,95 @@ class TestEvents:
         assert resp.status_code == 200
         assert "nextSyncToken" not in resp.json()
 
+    def test_instances_expands_recurrence_and_supports_pagination(self, gcal_client):
+        c = gcal_client.post("/calendar/v3/calendars", json={"summary": "Recurring"})
+        assert c.status_code == 200
+        cal_id = c.json()["id"]
+
+        now = datetime.now(timezone.utc).replace(microsecond=0)
+        start = _rfc3339(now + timedelta(days=1))
+        end = _rfc3339(now + timedelta(days=1, hours=1))
+
+        ins = gcal_client.post(
+            f"/calendar/v3/calendars/{cal_id}/events",
+            json={
+                "summary": "Recurring Event",
+                "start": {"dateTime": start},
+                "end": {"dateTime": end},
+                "recurrence": ["RRULE:FREQ=DAILY;COUNT=5"],
+            },
+        )
+        assert ins.status_code == 200
+        event_id = ins.json()["id"]
+
+        page1 = gcal_client.get(
+            f"/calendar/v3/calendars/{cal_id}/events/{event_id}/instances",
+            params={"maxResults": 2},
+        )
+        assert page1.status_code == 200
+        body1 = page1.json()
+        assert len(body1["items"]) == 2
+        assert "nextPageToken" in body1
+        assert "nextSyncToken" not in body1
+        assert body1["items"][0]["recurringEventId"] == event_id
+        assert "originalStartTime" in body1["items"][0]
+
+        page2 = gcal_client.get(
+            f"/calendar/v3/calendars/{cal_id}/events/{event_id}/instances",
+            params={"maxResults": 2, "pageToken": body1["nextPageToken"]},
+        )
+        assert page2.status_code == 200
+        body2 = page2.json()
+        assert len(body2["items"]) >= 1
+
+        original_start = body1["items"][0]["originalStartTime"]["dateTime"]
+        single = gcal_client.get(
+            f"/calendar/v3/calendars/{cal_id}/events/{event_id}/instances",
+            params={"originalStart": original_start},
+        )
+        assert single.status_code == 200
+        assert len(single.json()["items"]) == 1
+
+    def test_snapshot_restore_preserves_event_timestamps(self, gcal_client):
+        c = gcal_client.post("/calendar/v3/calendars", json={"summary": "Snapshot TS"})
+        assert c.status_code == 200
+        cal_id = c.json()["id"]
+
+        now = datetime.now(timezone.utc).replace(microsecond=0)
+        start = _rfc3339(now + timedelta(days=2))
+        end = _rfc3339(now + timedelta(days=2, hours=1))
+
+        ins = gcal_client.post(
+            f"/calendar/v3/calendars/{cal_id}/events",
+            json={"summary": "Before Snapshot", "start": {"dateTime": start}, "end": {"dateTime": end}},
+        )
+        assert ins.status_code == 200
+        event = ins.json()
+        event_id = event["id"]
+        created_before = event["created"]
+        updated_before = event["updated"]
+
+        snap = gcal_client.post("/_admin/snapshot/ts_preserve")
+        assert snap.status_code == 200
+
+        patch = gcal_client.patch(
+            f"/calendar/v3/calendars/{cal_id}/events/{event_id}",
+            json={"summary": "After Snapshot"},
+        )
+        assert patch.status_code == 200
+        assert patch.json()["summary"] == "After Snapshot"
+        assert patch.json()["updated"] != updated_before
+
+        restore = gcal_client.post("/_admin/restore/ts_preserve")
+        assert restore.status_code == 200
+
+        after = gcal_client.get(f"/calendar/v3/calendars/{cal_id}/events/{event_id}")
+        assert after.status_code == 200
+        restored = after.json()
+        assert restored["summary"] == "Before Snapshot"
+        assert restored["created"] == created_before
+        assert restored["updated"] == updated_before
+
 
 class TestSettingsColorsFreebusyChannels:
     def test_settings_list_get_watch(self, gcal_client):

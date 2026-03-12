@@ -6,6 +6,7 @@ import hashlib
 import json
 import uuid
 from datetime import datetime, time, timedelta, timezone
+from typing import Any, Iterator
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy.orm import Session
@@ -52,7 +53,13 @@ def _parse_event_datetime(dt_value: EventDateTime, tz_name: str) -> datetime:
 
 
 def _iso(dt: datetime) -> str:
-    return dt.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+    return _as_aware_utc(dt).isoformat().replace("+00:00", "Z")
+
+
+def _as_aware_utc(dt: datetime) -> datetime:
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
 
 
 def _compute_event_etag(event: Event) -> str:
@@ -89,6 +96,201 @@ def _deserialize_recurrence(raw: str) -> list[str] | None:
     except json.JSONDecodeError:
         return None
     return data if isinstance(data, list) and data else None
+
+
+_WEEKDAY_MAP: dict[str, int] = {
+    "MO": 0,
+    "TU": 1,
+    "WE": 2,
+    "TH": 3,
+    "FR": 4,
+    "SA": 5,
+    "SU": 6,
+}
+
+
+def _parse_until(value: str) -> datetime | None:
+    if not value:
+        return None
+    try:
+        if value.endswith("Z"):
+            dt = datetime.strptime(value, "%Y%m%dT%H%M%SZ")
+            return dt.replace(tzinfo=timezone.utc)
+        if "T" in value:
+            dt = datetime.strptime(value, "%Y%m%dT%H%M%S")
+            return dt.replace(tzinfo=timezone.utc)
+        dt = datetime.strptime(value, "%Y%m%d")
+        return datetime.combine(dt.date(), time.max, tzinfo=timezone.utc)
+    except ValueError:
+        return None
+
+
+def _parse_rrule(recurrence: list[str] | None) -> dict[str, Any] | None:
+    if not recurrence:
+        return None
+
+    rule_str = next(
+        (entry[len("RRULE:") :] for entry in recurrence if isinstance(entry, str) and entry.startswith("RRULE:")),
+        None,
+    )
+    if not rule_str:
+        return None
+
+    parts: dict[str, str] = {}
+    for raw_part in rule_str.split(";"):
+        if "=" not in raw_part:
+            continue
+        key, value = raw_part.split("=", 1)
+        parts[key.upper()] = value
+
+    freq = (parts.get("FREQ") or "").upper()
+    if freq not in {"DAILY", "WEEKLY"}:
+        return None
+
+    interval = 1
+    try:
+        interval = max(1, int(parts.get("INTERVAL", "1")))
+    except ValueError:
+        interval = 1
+
+    count: int | None = None
+    if parts.get("COUNT"):
+        try:
+            count = max(1, int(parts["COUNT"]))
+        except ValueError:
+            count = None
+
+    until = _parse_until(parts.get("UNTIL", ""))
+
+    byday: list[int] | None = None
+    if parts.get("BYDAY"):
+        parsed_days: list[int] = []
+        for token in parts["BYDAY"].split(","):
+            token = token.strip().upper()
+            code = token[-2:] if len(token) >= 2 else token
+            day = _WEEKDAY_MAP.get(code)
+            if day is not None:
+                parsed_days.append(day)
+        if parsed_days:
+            byday = sorted(set(parsed_days))
+
+    return {
+        "freq": freq,
+        "interval": interval,
+        "count": count,
+        "until": until,
+        "byday": byday,
+    }
+
+
+def _iter_weekly_starts(
+    *,
+    start_dt: datetime,
+    interval: int,
+    byday: list[int] | None,
+    count: int | None,
+    until: datetime | None,
+    max_emits: int,
+) -> Iterator[datetime]:
+    start_dt = _as_aware_utc(start_dt)
+    emitted = 0
+    max_occurrences = count if count is not None else max_emits
+
+    if byday:
+        anchor_week_start = start_dt.date() - timedelta(days=start_dt.weekday())
+        week_index = 0
+        while emitted < max_occurrences and week_index < max_emits:
+            week_start = anchor_week_start + timedelta(weeks=week_index * interval)
+            for day_index in byday:
+                candidate_date = week_start + timedelta(days=day_index)
+                candidate = datetime.combine(candidate_date, start_dt.timetz())
+                if candidate.tzinfo is None:
+                    candidate = candidate.replace(tzinfo=timezone.utc)
+                if candidate < start_dt:
+                    continue
+                if until and candidate > until:
+                    return
+                yield candidate
+                emitted += 1
+                if emitted >= max_occurrences:
+                    return
+            week_index += 1
+        return
+
+    index = 0
+    while emitted < max_occurrences and index < max_emits:
+        candidate = start_dt + timedelta(weeks=index * interval)
+        if until and candidate > until:
+            break
+        yield candidate
+        emitted += 1
+        index += 1
+
+
+def _iter_recurrence_starts(
+    *,
+    start_dt: datetime,
+    rule: dict[str, Any],
+    max_emits: int,
+) -> Iterator[datetime]:
+    start_dt = _as_aware_utc(start_dt)
+    freq = rule["freq"]
+    interval = rule["interval"]
+    count = rule["count"]
+    until = rule["until"]
+    byday = rule["byday"]
+    max_occurrences = count if count is not None else max_emits
+
+    if freq == "DAILY":
+        emitted = 0
+        index = 0
+        while emitted < max_occurrences and index < max_emits:
+            candidate = start_dt + timedelta(days=index * interval)
+            index += 1
+            if until and candidate > until:
+                break
+            if byday and candidate.weekday() not in byday:
+                continue
+            yield candidate
+            emitted += 1
+        return
+
+    if freq == "WEEKLY":
+        yield from _iter_weekly_starts(
+            start_dt=start_dt,
+            interval=interval,
+            byday=byday,
+            count=count,
+            until=until,
+            max_emits=max_emits,
+        )
+
+
+def _to_instance_resource(
+    *,
+    event: Event,
+    start_dt: datetime,
+    end_dt: datetime,
+    time_zone: str,
+) -> EventResource:
+    start_dt = _as_aware_utc(start_dt)
+    end_dt = _as_aware_utc(end_dt)
+    base = _to_event_resource(event)
+    start_iso = _iso(start_dt)
+    end_iso = _iso(end_dt)
+    instance_id = f"{event.id}_{start_dt.astimezone(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}"
+    instance_etag = f'"{_md5_hex(f"{event.id}:{start_iso}:{end_iso}:{event.updated_at.isoformat()}:{event.sequence}")}"'
+    return base.model_copy(
+        update={
+            "id": instance_id,
+            "etag": instance_etag,
+            "start": EventDateTime(dateTime=start_iso, timeZone=time_zone),
+            "end": EventDateTime(dateTime=end_iso, timeZone=time_zone),
+            "recurrence": None,
+            "recurringEventId": event.id,
+            "originalStartTime": EventDateTime(dateTime=start_iso, timeZone=time_zone),
+        }
+    )
 
 
 def _to_event_resource(event: Event) -> EventResource:
@@ -419,6 +621,12 @@ def events_instances(
     calendarId: str,
     eventId: str,
     maxResults: int = Query(250, ge=1, le=2500),
+    pageToken: str | None = Query(None),
+    timeMin: str | None = Query(None),
+    timeMax: str | None = Query(None),
+    originalStart: str | None = Query(None),
+    showDeleted: bool = Query(False),
+    timeZone: str | None = Query(None),
     db: Session = Depends(get_db),
     _actor_user_id: str = Depends(resolve_actor_user_id),
 ):
@@ -430,14 +638,64 @@ def events_instances(
     if not event:
         raise HTTPException(404, "Event not found")
 
+    offset = 0
+    if pageToken:
+        try:
+            offset = int(pageToken)
+        except ValueError as exc:
+            raise HTTPException(400, "Invalid pageToken") from exc
+
+    time_min_dt = _parse_rfc3339(timeMin) if timeMin else None
+    time_max_dt = _parse_rfc3339(timeMax) if timeMax else None
+    if time_min_dt and time_max_dt and time_max_dt <= time_min_dt:
+        raise HTTPException(400, "timeMax must be greater than timeMin")
+    original_start_dt = _parse_rfc3339(originalStart) if originalStart else None
+    if original_start_dt is not None:
+        original_start_dt = _as_aware_utc(original_start_dt)
+
     recurrence = _deserialize_recurrence(event.recurrence_json)
-    # Recurrence expansion is intentionally simplified. For non-recurring events
-    # real API returns an empty items list with collection metadata.
+    rule = _parse_rrule(recurrence)
     items: list[EventResource] = []
-    if recurrence:
-        # Emit the master event as a single instance to keep deterministic behavior.
-        items = [_to_event_resource(event)]
-        items = items[:maxResults]
+
+    if rule and (showDeleted or event.status != "cancelled"):
+        duration = event.end_dt - event.start_dt
+        needed_matches = offset + maxResults
+        matched: list[EventResource] = []
+        has_more = False
+        # Keep bounded for unbounded recurrences while still supporting paging/filtering.
+        max_emits = max(needed_matches * 10, 1000)
+
+        for start_dt in _iter_recurrence_starts(
+            start_dt=event.start_dt,
+            rule=rule,
+            max_emits=max_emits,
+        ):
+            start_dt = _as_aware_utc(start_dt)
+            end_dt = _as_aware_utc(start_dt + duration)
+
+            if time_min_dt and end_dt < time_min_dt:
+                continue
+            if time_max_dt and start_dt >= time_max_dt:
+                break
+            if original_start_dt and start_dt != original_start_dt:
+                continue
+
+            matched.append(
+                _to_instance_resource(
+                    event=event,
+                    start_dt=start_dt,
+                    end_dt=end_dt,
+                    time_zone=timeZone or calendar.timezone,
+                )
+            )
+            if len(matched) > needed_matches:
+                has_more = True
+                break
+
+        items = matched[offset : offset + maxResults]
+        next_page_token = str(offset + maxResults) if has_more else None
+    else:
+        next_page_token = None
 
     list_etag_raw = "|".join(i.etag for i in items)
     return EventListResponse(
@@ -449,7 +707,8 @@ def events_instances(
         accessRole=calendar.access_role,
         defaultReminders=[ReminderOverride(method="popup", minutes=10)],
         items=items,
-        nextSyncToken=_md5_hex(f"{calendar.id}:{event.id}:{event.updated_at.isoformat()}"),
+        nextPageToken=next_page_token,
+        nextSyncToken=None if next_page_token else _md5_hex(f"{calendar.id}:{event.id}:{event.updated_at.isoformat()}"),
     )
 
 
