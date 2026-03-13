@@ -90,6 +90,20 @@ class UpdateDocumentStyleRequest(BaseModel):
     fields: str = ""
 
 
+class CreateNamedRangeRequest(BaseModel):
+    name: str
+    range: Range
+
+
+class DeleteNamedRangeRequest(BaseModel):
+    namedRangeId: str
+
+
+class ReplaceNamedRangeContentRequest(BaseModel):
+    namedRangeId: str
+    text: str = ""
+
+
 class RequestItem(BaseModel):
     insertText: InsertTextRequest | None = None
     replaceAllText: ReplaceAllTextRequest | None = None
@@ -99,6 +113,9 @@ class RequestItem(BaseModel):
     createParagraphBullets: CreateParagraphBulletsRequest | None = None
     deleteParagraphBullets: DeleteParagraphBulletsRequest | None = None
     updateDocumentStyle: UpdateDocumentStyleRequest | None = None
+    createNamedRange: CreateNamedRangeRequest | None = None
+    deleteNamedRange: DeleteNamedRangeRequest | None = None
+    replaceNamedRangeContent: ReplaceNamedRangeContentRequest | None = None
 
 
 class WriteControl(BaseModel):
@@ -126,6 +143,10 @@ class CreateParagraphBulletsResponse(BaseModel):
     applied: bool = True
 
 
+class CreateNamedRangeResponse(BaseModel):
+    namedRangeId: str
+
+
 class ResponseItem(BaseModel):
     model_config = {"exclude_none": True}
 
@@ -133,6 +154,7 @@ class ResponseItem(BaseModel):
     replaceAllText: ReplaceAllTextResponse | None = None
     updateTextStyle: UpdateTextStyleResponse | None = None
     createParagraphBullets: CreateParagraphBulletsResponse | None = None
+    createNamedRange: CreateNamedRangeResponse | None = None
 
 
 class TextRun(BaseModel):
@@ -199,6 +221,12 @@ class NamedStyles(BaseModel):
     styles: list[dict[str, Any]] = Field(default_factory=list)
 
 
+class NamedRangeResource(BaseModel):
+    namedRangeId: str
+    name: str
+    ranges: list[Range] = Field(default_factory=list)
+
+
 class DocumentTabResource(BaseModel):
     model_config = {"exclude_none": True}
 
@@ -224,6 +252,7 @@ class DocumentResource(BaseModel):
     body: Body | None = None
     documentStyle: dict[str, Any] | None = None
     namedStyles: NamedStyles | None = None
+    namedRanges: dict[str, list[NamedRangeResource]] | None = None
     lists: dict[str, dict[str, Any]] | None = None
     suggestionsViewMode: str = "SUGGESTIONS_INLINE"
     tabs: list[TabResource] | None = None
@@ -269,3 +298,59 @@ class DriveFileList(BaseModel):
     kind: Literal["drive#fileList"] = "drive#fileList"
     files: list[DriveFileResource] = Field(default_factory=list)
     nextPageToken: str | None = None
+
+
+class DrivePermissionResource(BaseModel):
+    model_config = {"exclude_none": True}
+
+    kind: Literal["drive#permission"] = "drive#permission"
+    id: str
+    type: str = "user"
+    role: str
+    emailAddress: str | None = None
+    displayName: str | None = None
+    deleted: bool | None = None
+    allowFileDiscovery: bool | None = None
+
+
+class DrivePermissionList(BaseModel):
+    kind: Literal["drive#permissionList"] = "drive#permissionList"
+    permissions: list[DrivePermissionResource] = Field(default_factory=list)
+
+
+class DrivePermissionCreateRequest(BaseModel):
+    model_config = {"extra": "ignore"}
+
+    type: str = "user"
+    role: str = "reader"
+    emailAddress: str
+    allowFileDiscovery: bool = False
+
+
+class DrivePermissionUpdateRequest(BaseModel):
+    model_config = {"extra": "ignore"}
+
+    role: str | None = None
+    allowFileDiscovery: bool | None = None
+
+
+class DriveStartPageToken(BaseModel):
+    startPageToken: str
+
+
+class DriveChangeResource(BaseModel):
+    model_config = {"exclude_none": True}
+
+    kind: Literal["drive#change"] = "drive#change"
+    changeType: str
+    fileId: str
+    removed: bool
+    time: str
+    file: DriveFileResource | None = None
+
+
+class DriveChangeList(BaseModel):
+    kind: Literal["drive#changeList"] = "drive#changeList"
+    changes: list[DriveChangeResource] = Field(default_factory=list)
+    nextPageToken: str | None = None
+    newStartPageToken: str | None = None

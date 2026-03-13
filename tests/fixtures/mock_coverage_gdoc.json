@@ -115,7 +115,88 @@
       "fixture": null,
       "tests": [
         "tests/test_gdoc_api.py::TestDriveBridge::test_list_get_export",
-        "tests/test_gdoc_api.py::TestDriveBridge::test_invalid_page_token_and_export_mime"
+        "tests/test_gdoc_api.py::TestDriveBridge::test_invalid_page_token_and_export_mime",
+        "tests/test_gdoc_api.py::TestDriveBridge::test_export_structured_formats"
+      ]
+    },
+    {
+      "id": "drive.permissions.list",
+      "resource": "Permissions",
+      "method": "GET",
+      "path": "/files/{fileId}/permissions",
+      "implemented": true,
+      "fixture": null,
+      "tests": [
+        "tests/test_gdoc_api.py::TestSharingAndPermissions::test_permission_crud_and_shared_access"
+      ]
+    },
+    {
+      "id": "drive.permissions.get",
+      "resource": "Permissions",
+      "method": "GET",
+      "path": "/files/{fileId}/permissions/{permissionId}",
+      "implemented": true,
+      "fixture": null,
+      "tests": [
+        "tests/test_gdoc_api.py::TestSharingAndPermissions::test_permission_crud_and_shared_access"
+      ]
+    },
+    {
+      "id": "drive.permissions.create",
+      "resource": "Permissions",
+      "method": "POST",
+      "path": "/files/{fileId}/permissions",
+      "implemented": true,
+      "fixture": null,
+      "tests": [
+        "tests/test_gdoc_api.py::TestSharingAndPermissions::test_permission_crud_and_shared_access",
+        "tests/test_gdoc_api.py::TestSharingAndPermissions::test_changes_feed_includes_permission_changes_for_collaborator"
+      ]
+    },
+    {
+      "id": "drive.permissions.update",
+      "resource": "Permissions",
+      "method": "PATCH",
+      "path": "/files/{fileId}/permissions/{permissionId}",
+      "implemented": true,
+      "fixture": null,
+      "tests": [
+        "tests/test_gdoc_api.py::TestSharingAndPermissions::test_permission_crud_and_shared_access"
+      ]
+    },
+    {
+      "id": "drive.permissions.delete",
+      "resource": "Permissions",
+      "method": "DELETE",
+      "path": "/files/{fileId}/permissions/{permissionId}",
+      "implemented": true,
+      "fixture": null,
+      "tests": [
+        "tests/test_gdoc_api.py::TestSharingAndPermissions::test_permission_crud_and_shared_access"
+      ]
+    },
+    {
+      "id": "drive.changes.getStartPageToken",
+      "resource": "Changes",
+      "method": "GET",
+      "path": "/changes/startPageToken",
+      "implemented": true,
+      "fixture": null,
+      "tests": [
+        "tests/test_gdoc_api.py::TestDriveBridge::test_changes_feed_tracks_document_lifecycle",
+        "tests/test_gdoc_api.py::TestSharingAndPermissions::test_changes_feed_includes_permission_changes_for_collaborator"
+      ]
+    },
+    {
+      "id": "drive.changes.list",
+      "resource": "Changes",
+      "method": "GET",
+      "path": "/changes",
+      "implemented": true,
+      "fixture": null,
+      "tests": [
+        "tests/test_gdoc_api.py::TestDriveBridge::test_changes_feed_tracks_document_lifecycle",
+        "tests/test_gdoc_api.py::TestSharingAndPermissions::test_changes_feed_includes_permission_changes_for_collaborator"
       ]
     }
   ]

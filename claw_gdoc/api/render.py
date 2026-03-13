@@ -14,10 +14,12 @@ from .schemas import (
     Bullet,
     DocumentResource,
     DocumentTabResource,
+    NamedRangeResource,
     NamedStyles,
     Paragraph,
     ParagraphElement,
     ParagraphStyle,
+    Range,
     ResponseItem,
     SectionBreak,
     StructuralElement,
@@ -40,10 +42,19 @@ SUPPORTED_TEXT_STYLE_FIELDS = {
     "weightedFontFamily",
 }
 SUPPORTED_PARAGRAPH_STYLE_FIELDS = {
+    "alignment",
+    "avoidWidowAndOrphan",
     "direction",
     "indentFirstLine",
     "indentStart",
+    "keepLinesTogether",
+    "keepWithNext",
+    "lineSpacing",
     "namedStyleType",
+    "pageBreakBefore",
+    "spaceAbove",
+    "spaceBelow",
+    "spacingMode",
 }
 SUPPORTED_DOCUMENT_STYLE_FIELDS = {
     "background",
@@ -198,8 +209,7 @@ def _paragraph_meta(paragraph_ops: list[dict], start_index: int, end_index: int)
         if not overlaps:
             continue
         style = entry.get("paragraphStyle", {})
-        for field in SUPPORTED_PARAGRAPH_STYLE_FIELDS:
-            value = style.get(field)
+        for field, value in style.items():
             if value is not None:
                 meta[field] = value
         if entry.get("namedStyleType"):
@@ -236,6 +246,52 @@ def _list_payload(paragraph_ops: list[dict]) -> dict[str, dict[str, Any]]:
     return lists
 
 
+def _normalize_named_ranges(named_ranges_json: str) -> list[dict[str, Any]]:
+    payload = load_json_field(named_ranges_json, [])
+    if not isinstance(payload, list):
+        return []
+    normalized = []
+    for entry in payload:
+        if not isinstance(entry, dict):
+            continue
+        if "namedRangeId" not in entry or "name" not in entry:
+            continue
+        if "startIndex" not in entry or "endIndex" not in entry:
+            continue
+        normalized.append(
+            {
+                "namedRangeId": str(entry["namedRangeId"]),
+                "name": str(entry["name"]),
+                "startIndex": int(entry["startIndex"]),
+                "endIndex": int(entry["endIndex"]),
+            }
+        )
+    return sorted(
+        normalized,
+        key=lambda item: (item["name"], item["startIndex"], item["endIndex"], item["namedRangeId"]),
+    )
+
+
+def _render_named_ranges(named_ranges: list[dict[str, Any]]) -> dict[str, list[NamedRangeResource]] | None:
+    if not named_ranges:
+        return None
+    grouped: dict[str, list[NamedRangeResource]] = {}
+    for entry in named_ranges:
+        grouped.setdefault(entry["name"], []).append(
+            NamedRangeResource(
+                namedRangeId=entry["namedRangeId"],
+                name=entry["name"],
+                ranges=[
+                    Range(
+                        startIndex=entry["startIndex"],
+                        endIndex=entry["endIndex"],
+                    )
+                ],
+            )
+        )
+    return grouped
+
+
 def render_document_resource(
     *,
     document_id: str,
@@ -243,6 +299,7 @@ def render_document_resource(
     body_text: str,
     text_style_spans_json: str,
     paragraph_style_json: str,
+    named_ranges_json: str,
     named_styles_json: str,
     document_style_json: str,
     revision_id: int | str,
@@ -253,6 +310,7 @@ def render_document_resource(
     text = normalize_body_text(body_text)
     text_spans = load_json_field(text_style_spans_json, [])
     paragraph_ops = load_json_field(paragraph_style_json, [])
+    named_ranges = _normalize_named_ranges(named_ranges_json)
     named_styles = load_json_field(named_styles_json, default_named_styles())
     document_style = load_json_field(document_style_json, default_document_style())
 
@@ -350,6 +408,7 @@ def render_document_resource(
     resource.body = body
     resource.documentStyle = document_style
     resource.namedStyles = named_styles_model
+    resource.namedRanges = _render_named_ranges(named_ranges)
     resource.lists = lists_payload
     if include_tabs:
         resource.tabs = [document_tab]
@@ -496,6 +555,7 @@ class EditorState:
     text: str
     text_spans: list[dict]
     paragraph_ops: list[dict]
+    named_ranges: list[dict]
     replies: list[ResponseItem]
 
 
@@ -504,6 +564,7 @@ def _insert_text(state: EditorState, index: int, text: str, *, record_reply: boo
     delta = len(text)
     state.text_spans = _shift_insert(state.text_spans, index, delta)
     state.paragraph_ops = _shift_insert(state.paragraph_ops, index, delta)
+    state.named_ranges = _merge_named_ranges(_shift_insert(state.named_ranges, index, delta))
     if record_reply:
         state.replies.append(ResponseItem())
 
@@ -518,6 +579,9 @@ def _delete_range(state: EditorState, start_index: int, end_index: int, *, recor
     )
     state.paragraph_ops = _merge_paragraph_ops(
         _shift_delete(state.paragraph_ops, start_index, end_index)
+    )
+    state.named_ranges = _merge_named_ranges(
+        _shift_delete(state.named_ranges, start_index, end_index)
     )
     if record_reply:
         state.replies.append(ResponseItem())
@@ -570,6 +634,30 @@ def _update_text_style(state: EditorState, start_index: int, end_index: int, sty
     )
     state.text_spans = _merge_style_spans(state.text, state.text_spans)
     state.replies.append(ResponseItem())
+
+
+def _merge_named_ranges(named_ranges: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    deduped: list[dict[str, Any]] = []
+    seen: set[tuple[str, str, int, int]] = set()
+    for entry in named_ranges:
+        key = (
+            str(entry["namedRangeId"]),
+            str(entry["name"]),
+            int(entry["startIndex"]),
+            int(entry["endIndex"]),
+        )
+        if key in seen:
+            continue
+        deduped.append(
+            {
+                "namedRangeId": str(entry["namedRangeId"]),
+                "name": str(entry["name"]),
+                "startIndex": int(entry["startIndex"]),
+                "endIndex": int(entry["endIndex"]),
+            }
+        )
+        seen.add(key)
+    return sorted(deduped, key=lambda item: (item["name"], item["startIndex"], item["endIndex"], item["namedRangeId"]))
 
 
 def _paragraph_ranges(text: str) -> list[tuple[int, int]]:
@@ -671,6 +759,60 @@ def _delete_paragraph_bullets(state: EditorState, start_index: int, end_index: i
     state.replies.append(ResponseItem())
 
 
+def _create_named_range(state: EditorState, name: str, start_index: int, end_index: int):
+    if not name.strip():
+        raise HTTPException(400, {"message": "createNamedRange.name is required", "reason": "badRequest"})
+    if end_index <= start_index:
+        raise HTTPException(400, {"message": "Invalid createNamedRange range", "reason": "badRequest"})
+    named_range_id = f"named-range-{uuid.uuid4().hex[:12]}"
+    state.named_ranges = _merge_named_ranges(
+        state.named_ranges
+        + [
+            {
+                "namedRangeId": named_range_id,
+                "name": name,
+                "startIndex": start_index,
+                "endIndex": end_index,
+            }
+        ]
+    )
+    state.replies.append(ResponseItem(createNamedRange={"namedRangeId": named_range_id}))
+
+
+def _delete_named_range(state: EditorState, named_range_id: str):
+    before = len(state.named_ranges)
+    state.named_ranges = [entry for entry in state.named_ranges if entry["namedRangeId"] != named_range_id]
+    if len(state.named_ranges) == before:
+        raise HTTPException(400, {"message": "Named range not found", "reason": "badRequest"})
+    state.replies.append(ResponseItem())
+
+
+def _replace_named_range_content(state: EditorState, named_range_id: str, text: str):
+    target = next((entry for entry in state.named_ranges if entry["namedRangeId"] == named_range_id), None)
+    if target is None:
+        raise HTTPException(400, {"message": "Named range not found", "reason": "badRequest"})
+    start_index = target["startIndex"]
+    end_index = target["endIndex"]
+    remaining_named_ranges = [
+        entry for entry in state.named_ranges if entry["namedRangeId"] != named_range_id
+    ]
+    _delete_range(state, start_index, end_index, record_reply=False)
+    if text:
+        _insert_text(state, start_index, text, record_reply=False)
+    new_end = start_index + len(text)
+    state.named_ranges = _merge_named_ranges(
+        remaining_named_ranges
+        + [
+            {
+                **target,
+                "startIndex": start_index,
+                "endIndex": new_end,
+            }
+        ]
+    )
+    state.replies.append(ResponseItem())
+
+
 def _update_document_style(document_style_json: str, style: dict[str, Any], fields: str) -> str:
     current = load_json_field(document_style_json, default_document_style())
     requested_fields = _style_fields_to_list(fields)
@@ -692,13 +834,15 @@ def apply_batch_requests(
     body_text: str,
     text_style_spans_json: str,
     paragraph_style_json: str,
+    named_ranges_json: str,
     document_style_json: str,
     requests: list[dict[str, Any]],
-) -> tuple[str, str, str, str, list[ResponseItem]]:
+) -> tuple[str, str, str, str, str, list[ResponseItem]]:
     state = EditorState(
         text=normalize_body_text(body_text),
         text_spans=load_json_field(text_style_spans_json, []),
         paragraph_ops=load_json_field(paragraph_style_json, []),
+        named_ranges=_normalize_named_ranges(named_ranges_json),
         replies=[],
     )
     next_document_style_json = document_style_json
@@ -793,6 +937,33 @@ def apply_batch_requests(
                 state.replies.append(ResponseItem())
                 continue
 
+            if request.get("createNamedRange") is not None:
+                payload = request["createNamedRange"]
+                span = payload["range"]
+                start_index = _validate_index(state.text, int(span["startIndex"]))
+                end_index = _validate_index(state.text, int(span["endIndex"]), allow_terminal=True)
+                _create_named_range(
+                    state,
+                    payload.get("name", ""),
+                    start_index,
+                    end_index,
+                )
+                continue
+
+            if request.get("deleteNamedRange") is not None:
+                payload = request["deleteNamedRange"]
+                _delete_named_range(state, str(payload["namedRangeId"]))
+                continue
+
+            if request.get("replaceNamedRangeContent") is not None:
+                payload = request["replaceNamedRangeContent"]
+                _replace_named_range_content(
+                    state,
+                    str(payload["namedRangeId"]),
+                    payload.get("text", ""),
+                )
+                continue
+
             raise HTTPException(
                 400,
                 {"message": "Unsupported request type", "reason": "badRequest"},
@@ -813,6 +984,7 @@ def apply_batch_requests(
         normalize_body_text(state.text),
         dump_json_field(state.text_spans),
         dump_json_field(state.paragraph_ops),
+        dump_json_field(state.named_ranges),
         next_document_style_json,
         state.replies,
     )

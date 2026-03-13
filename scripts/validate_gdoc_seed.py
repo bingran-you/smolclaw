@@ -27,6 +27,9 @@ def _load_summary(db_path: str) -> dict[str, int | str]:
         counts = {
             "users": conn.execute("SELECT COUNT(*) FROM users").fetchone()[0],
             "documents": conn.execute("SELECT COUNT(*) FROM documents").fetchone()[0],
+            "shared_permissions": conn.execute(
+                "SELECT COUNT(*) FROM document_permissions WHERE role != 'owner'"
+            ).fetchone()[0],
             "with_links": conn.execute("SELECT COUNT(*) FROM documents WHERE text_style_spans_json LIKE '%link%'").fetchone()[0],
             "with_bullets": conn.execute("SELECT COUNT(*) FROM documents WHERE paragraph_style_json LIKE '%bulletPreset%'").fetchone()[0],
             "heading_docs": conn.execute("SELECT COUNT(*) FROM documents WHERE paragraph_style_json LIKE '%HEADING_1%'").fetchone()[0],
@@ -47,6 +50,7 @@ def validate(db_path: str, scenario: str) -> bool:
     print(f"User email: {summary['email']}")
     print(f"Users: {summary['users']}")
     print(f"Documents: {summary['documents']}")
+    print(f"Shared permissions: {summary['shared_permissions']}")
     print(f"With links: {summary['with_links']}")
     print(f"With bullets: {summary['with_bullets']}")
     print(f"Heading docs: {summary['heading_docs']}")
@@ -70,6 +74,8 @@ def validate(db_path: str, scenario: str) -> bool:
         errors.append("Launch War Room Notes missing")
     if scenario == "long_context" and summary["documents"] <= len(DEFAULT_DOCUMENTS) + len(LAUNCH_CRUNCH_EXTRA_DOCUMENTS):
         errors.append("long_context did not expand document count")
+    if summary["users"] > 1 and summary["shared_permissions"] < 2:
+        errors.append("shared_permissions < 2 for multi-user seed")
 
     if errors:
         print(f"\nFAILED ({len(errors)} errors):")
