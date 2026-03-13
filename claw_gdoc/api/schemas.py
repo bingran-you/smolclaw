@@ -29,11 +29,18 @@ class Link(BaseModel):
 
 
 class TextStyle(BaseModel):
-    model_config = {"exclude_none": True}
+    model_config = {"exclude_none": True, "extra": "allow"}
 
     bold: bool | None = None
     italic: bool | None = None
     underline: bool | None = None
+    strikethrough: bool | None = None
+    foregroundColor: dict[str, Any] | None = None
+    backgroundColor: dict[str, Any] | None = None
+    fontSize: dict[str, Any] | None = None
+    weightedFontFamily: dict[str, Any] | None = None
+    baselineOffset: str | None = None
+    smallCaps: bool | None = None
     link: Link | None = None
 
 
@@ -63,9 +70,24 @@ class UpdateTextStyleRequest(BaseModel):
     fields: str = ""
 
 
+class UpdateParagraphStyleRequest(BaseModel):
+    range: Range
+    paragraphStyle: dict[str, Any] = Field(default_factory=dict)
+    fields: str = ""
+
+
 class CreateParagraphBulletsRequest(BaseModel):
     range: Range
     bulletPreset: str = "BULLET_DISC_CIRCLE_SQUARE"
+
+
+class DeleteParagraphBulletsRequest(BaseModel):
+    range: Range
+
+
+class UpdateDocumentStyleRequest(BaseModel):
+    documentStyle: dict[str, Any] = Field(default_factory=dict)
+    fields: str = ""
 
 
 class RequestItem(BaseModel):
@@ -73,7 +95,10 @@ class RequestItem(BaseModel):
     replaceAllText: ReplaceAllTextRequest | None = None
     deleteContentRange: DeleteContentRangeRequest | None = None
     updateTextStyle: UpdateTextStyleRequest | None = None
+    updateParagraphStyle: UpdateParagraphStyleRequest | None = None
     createParagraphBullets: CreateParagraphBulletsRequest | None = None
+    deleteParagraphBullets: DeleteParagraphBulletsRequest | None = None
+    updateDocumentStyle: UpdateDocumentStyleRequest | None = None
 
 
 class WriteControl(BaseModel):
@@ -114,7 +139,7 @@ class TextRun(BaseModel):
     model_config = {"exclude_none": True}
 
     content: str
-    textStyle: TextStyle | None = None
+    textStyle: TextStyle = Field(default_factory=TextStyle)
 
 
 class ParagraphElement(BaseModel):
@@ -124,14 +149,21 @@ class ParagraphElement(BaseModel):
 
 
 class Bullet(BaseModel):
-    model_config = {"exclude_none": True}
+    model_config = {"exclude_none": True, "extra": "allow"}
 
     listId: str
     nestingLevel: int = 0
+    textStyle: TextStyle = Field(default_factory=TextStyle)
 
 
 class ParagraphStyle(BaseModel):
+    model_config = {"exclude_none": True, "extra": "allow"}
+
+    direction: str = "LEFT_TO_RIGHT"
     namedStyleType: str = "NORMAL_TEXT"
+    headingId: str | None = None
+    indentFirstLine: dict[str, Any] | None = None
+    indentStart: dict[str, Any] | None = None
 
 
 class Paragraph(BaseModel):
@@ -149,7 +181,7 @@ class SectionBreak(BaseModel):
 class StructuralElement(BaseModel):
     model_config = {"exclude_none": True}
 
-    startIndex: int
+    startIndex: int | None = None
     endIndex: int
     paragraph: Paragraph | None = None
     sectionBreak: SectionBreak | None = None
@@ -167,19 +199,39 @@ class NamedStyles(BaseModel):
     styles: list[dict[str, Any]] = Field(default_factory=list)
 
 
+class DocumentTabResource(BaseModel):
+    model_config = {"exclude_none": True}
+
+    body: Body
+    documentStyle: dict[str, Any] = Field(default_factory=dict)
+    namedStyles: NamedStyles = Field(default_factory=NamedStyles)
+    lists: dict[str, dict[str, Any]] | None = None
+
+
+class TabResource(BaseModel):
+    model_config = {"exclude_none": True}
+
+    tabProperties: dict[str, Any] = Field(default_factory=dict)
+    documentTab: DocumentTabResource
+
+
 class DocumentResource(BaseModel):
     model_config = {"exclude_none": True}
 
     title: str
     documentId: str
     revisionId: str
-    body: Body
-    documentStyle: dict[str, Any] = Field(default_factory=dict)
-    namedStyles: NamedStyles = Field(default_factory=NamedStyles)
-    lists: dict[str, dict[str, Any]] = Field(default_factory=dict)
+    body: Body | None = None
+    documentStyle: dict[str, Any] | None = None
+    namedStyles: NamedStyles | None = None
+    lists: dict[str, dict[str, Any]] | None = None
+    suggestionsViewMode: str = "SUGGESTIONS_INLINE"
+    tabs: list[TabResource] | None = None
 
 
 class DocumentCreateRequest(BaseModel):
+    model_config = {"extra": "ignore"}
+
     title: str = ""
 
 
@@ -201,17 +253,19 @@ class DriveFileResource(BaseModel):
 
     kind: Literal["drive#file"] = "drive#file"
     id: str
-    name: str
-    mimeType: str
-    createdTime: str
-    modifiedTime: str
-    trashed: bool = False
-    webViewLink: str
-    iconLink: str
-    exportLinks: dict[str, str] = Field(default_factory=dict)
+    name: str | None = None
+    mimeType: str | None = None
+    description: str | None = None
+    createdTime: str | None = None
+    modifiedTime: str | None = None
+    trashed: bool | None = None
+    webViewLink: str | None = None
+    iconLink: str | None = None
+    exportLinks: dict[str, str] | None = None
+    ownedByMe: bool | None = None
 
 
 class DriveFileList(BaseModel):
     kind: Literal["drive#fileList"] = "drive#fileList"
-    files: list[DriveFileResource]
+    files: list[DriveFileResource] = Field(default_factory=list)
     nextPageToken: str | None = None

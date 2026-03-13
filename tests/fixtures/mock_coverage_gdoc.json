@@ -63,6 +63,50 @@
       ]
     },
     {
+      "id": "drive.files.create",
+      "resource": "Files",
+      "method": "POST",
+      "path": "/files",
+      "implemented": true,
+      "fixture": null,
+      "tests": [
+        "tests/test_gdoc_api.py::TestDriveBridge::test_file_create_copy_update_delete"
+      ]
+    },
+    {
+      "id": "drive.files.copy",
+      "resource": "Files",
+      "method": "POST",
+      "path": "/files/{fileId}/copy",
+      "implemented": true,
+      "fixture": null,
+      "tests": [
+        "tests/test_gdoc_api.py::TestDriveBridge::test_file_create_copy_update_delete"
+      ]
+    },
+    {
+      "id": "drive.files.update",
+      "resource": "Files",
+      "method": "PATCH",
+      "path": "/files/{fileId}",
+      "implemented": true,
+      "fixture": null,
+      "tests": [
+        "tests/test_gdoc_api.py::TestDriveBridge::test_file_create_copy_update_delete"
+      ]
+    },
+    {
+      "id": "drive.files.delete",
+      "resource": "Files",
+      "method": "DELETE",
+      "path": "/files/{fileId}",
+      "implemented": true,
+      "fixture": null,
+      "tests": [
+        "tests/test_gdoc_api.py::TestDriveBridge::test_file_create_copy_update_delete"
+      ]
+    },
+    {
       "id": "drive.files.export",
       "resource": "Files",
       "method": "GET",

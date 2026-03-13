@@ -1,11 +1,10 @@
 {
   "title": "Agent Runbooks PRD",
   "documentId": "doc_fixture",
-  "revisionId": "1",
+  "revisionId": "opaque_revision_id",
   "body": {
     "content": [
       {
-        "startIndex": 0,
         "endIndex": 1,
         "sectionBreak": {
           "sectionStyle": {}
@@ -20,11 +19,13 @@
               "startIndex": 1,
               "endIndex": 20,
               "textRun": {
-                "content": "Agent Runbooks PRD\n"
+                "content": "Agent Runbooks PRD\n",
+                "textStyle": {}
               }
             }
           ],
           "paragraphStyle": {
+            "direction": "LEFT_TO_RIGHT",
             "namedStyleType": "HEADING_1"
           }
         }
@@ -46,5 +47,5 @@
       }
     ]
   },
-  "lists": {}
+  "suggestionsViewMode": "SUGGESTIONS_INLINE"
 }

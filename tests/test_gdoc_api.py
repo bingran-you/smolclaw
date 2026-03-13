@@ -89,15 +89,33 @@ class TestDocuments:
         assert resp.status_code == 200
         data = resp.json()
         assert data["documentId"] == document_id
-        assert data["body"]["content"][0]["sectionBreak"] == {"sectionStyle": {}}
+        assert data["suggestionsViewMode"] == "SUGGESTIONS_INLINE"
+        assert data["body"]["content"][0]["sectionBreak"]["sectionStyle"]["sectionType"] == "CONTINUOUS"
 
     def test_create_document(self, gdoc_client):
         resp = gdoc_client.post("/v1/documents", json={"title": "New Draft"})
         assert resp.status_code == 200
         data = resp.json()
         assert data["title"] == "New Draft"
-        assert data["revisionId"] == "1"
+        assert data["revisionId"]
         assert data["body"]["content"][1]["paragraph"]["elements"][0]["textRun"]["content"] == "\n"
+        assert data["tabs"][0]["documentTab"]["body"]["content"][1]["paragraph"]["elements"][0]["textRun"]["content"] == "\n"
+
+    def test_create_document_ignores_body_payload(self, gdoc_client):
+        resp = gdoc_client.post(
+            "/v1/documents",
+            json={"title": "Ignore Content", "body": {"content": [{"startIndex": 1, "endIndex": 9}]}},
+        )
+        assert resp.status_code == 200
+        assert resp.json()["body"]["content"][1]["paragraph"]["elements"][0]["textRun"]["content"] == "\n"
+
+    def test_get_document_include_tabs_content(self, gdoc_client):
+        document_id = _first_document_id(gdoc_client)
+        resp = gdoc_client.get(f"/v1/documents/{document_id}", params={"includeTabsContent": "true"})
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "body" not in data
+        assert data["tabs"][0]["documentTab"]["body"]["content"]
 
     def test_insert_text(self, gdoc_client):
         document_id = _first_document_id(gdoc_client)
@@ -106,7 +124,8 @@ class TestDocuments:
             json={"requests": [{"insertText": {"location": {"index": 1}, "text": "Intro: "}}]},
         )
         assert resp.status_code == 200
-        assert resp.json()["writeControl"]["requiredRevisionId"] == "2"
+        assert resp.json()["writeControl"]["requiredRevisionId"]
+        assert resp.json()["replies"] == [{}]
 
         doc = gdoc_client.get(f"/v1/documents/{document_id}").json()
         first_paragraph = doc["body"]["content"][1]["paragraph"]["elements"][0]["textRun"]["content"]
@@ -210,6 +229,25 @@ class TestDocuments:
         assert doc["body"]["content"][1]["paragraph"]["bullet"]["listId"]
         assert doc["body"]["content"][2]["paragraph"]["bullet"]["listId"]
 
+    def test_update_paragraph_style_returns_empty_reply(self, gdoc_client):
+        document_id = _first_document_id(gdoc_client)
+        resp = gdoc_client.post(
+            f"/v1/documents/{document_id}:batchUpdate",
+            json={
+                "requests": [
+                    {
+                        "updateParagraphStyle": {
+                            "range": {"startIndex": 1, "endIndex": 20},
+                            "paragraphStyle": {"namedStyleType": "HEADING_1"},
+                            "fields": "namedStyleType",
+                        }
+                    }
+                ]
+            },
+        )
+        assert resp.status_code == 200
+        assert resp.json()["replies"] == [{}]
+
     def test_batch_update_is_atomic(self, gdoc_client):
         document_id = _first_document_id(gdoc_client)
         before = gdoc_client.get(f"/drive/v3/files/{document_id}/export", params={"mimeType": "text/plain"}).text
@@ -222,7 +260,7 @@ class TestDocuments:
                         "updateTextStyle": {
                             "range": {"startIndex": 1, "endIndex": 5},
                             "textStyle": {"foregroundColor": {"color": {}}},
-                            "fields": "foregroundColor",
+                            "fields": "foregroundColor,bogusField",
                         }
                     },
                 ]
@@ -256,6 +294,17 @@ class TestDriveBridge:
         get_resp = gdoc_client.get(f"/drive/v3/files/{file_id}")
         assert get_resp.status_code == 200
         assert get_resp.json()["mimeType"] == "application/vnd.google-apps.document"
+        assert "createdTime" not in get_resp.json()
+
+        fields_resp = gdoc_client.get(
+            f"/drive/v3/files/{file_id}",
+            params={
+                "fields": "id,name,mimeType,createdTime,modifiedTime,trashed,webViewLink,iconLink,exportLinks"
+            },
+        )
+        assert fields_resp.status_code == 200
+        assert "createdTime" in fields_resp.json()
+        assert "exportLinks" in fields_resp.json()
 
         export_resp = gdoc_client.get(f"/drive/v3/files/{file_id}/export", params={"mimeType": "text/plain"})
         assert export_resp.status_code == 200
@@ -278,6 +327,42 @@ class TestDriveBridge:
         file_id = _first_document_id(gdoc_client)
         bad_export = gdoc_client.get(
             f"/drive/v3/files/{file_id}/export",
-            params={"mimeType": "application/pdf"},
+            params={"mimeType": "application/xml"},
         )
         assert bad_export.status_code == 400
+
+    def test_file_create_copy_update_delete(self, gdoc_client):
+        create = gdoc_client.post(
+            "/drive/v3/files",
+            json={"name": "Drive Created Doc", "description": "Created via Drive"},
+        )
+        assert create.status_code == 200
+        created_id = create.json()["id"]
+
+        copy = gdoc_client.post(
+            f"/drive/v3/files/{created_id}/copy",
+            json={"name": "Drive Created Doc Copy"},
+        )
+        assert copy.status_code == 200
+        copied_id = copy.json()["id"]
+
+        update = gdoc_client.patch(
+            f"/drive/v3/files/{created_id}",
+            json={"name": "Drive Renamed Doc", "description": "Updated", "trashed": True},
+        )
+        assert update.status_code == 200
+
+        updated = gdoc_client.get(
+            f"/drive/v3/files/{created_id}",
+            params={"fields": "id,name,description,trashed"},
+        )
+        assert updated.status_code == 200
+        assert updated.json()["name"] == "Drive Renamed Doc"
+        assert updated.json()["description"] == "Updated"
+        assert updated.json()["trashed"] is True
+
+        delete = gdoc_client.delete(f"/drive/v3/files/{copied_id}")
+        assert delete.status_code == 204
+
+        missing = gdoc_client.get(f"/drive/v3/files/{copied_id}")
+        assert missing.status_code == 404

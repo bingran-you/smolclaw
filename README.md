@@ -62,7 +62,7 @@ Interactive API docs:
 
 **38 Google Calendar API endpoints** — calendarList, calendars, events, ACL, settings, colors, freeBusy, watch/channels, profile.
 
-**6 Google Docs / Drive bridge endpoints** — documents.get, documents.create, documents.batchUpdate, drive files.list/get/export.
+**10 Google Docs / Drive bridge endpoints** — documents.get, documents.create, documents.batchUpdate, plus drive files.list/get/create/copy/update/delete/export.
 
 **Seedable scenarios** — `default`, `launch_crunch`, `travel_heavy`, `long_context`, and per-task scenarios for both environments.
 
