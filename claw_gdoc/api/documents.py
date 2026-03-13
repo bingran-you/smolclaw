@@ -5,10 +5,10 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
-from claw_gdoc.models import Document, User
+from claw_gdoc.models import Document, User, generate_revision_id
 
 from .deps import get_db, resolve_actor_user_id
 from .render import (
@@ -35,7 +35,13 @@ def _get_document(db: Session, actor_user_id: str, document_id: str) -> Document
     return document
 
 
-def _document_to_resource(document: Document) -> DocumentResource:
+def _document_to_resource(
+    document: Document,
+    *,
+    include_tabs_content: bool = False,
+    include_tabs: bool = False,
+    suggestions_view_mode: str = "SUGGESTIONS_INLINE",
+) -> DocumentResource:
     return render_document_resource(
         document_id=document.id,
         title=document.title,
@@ -45,17 +51,26 @@ def _document_to_resource(document: Document) -> DocumentResource:
         named_styles_json=document.named_styles_json,
         document_style_json=document.document_style_json,
         revision_id=document.revision_id,
+        include_tabs_content=include_tabs_content,
+        include_tabs=include_tabs,
+        suggestions_view_mode=suggestions_view_mode,
     )
 
 
 @router.get("/documents/{documentId}", response_model=DocumentResource, response_model_exclude_none=True)
 def get_document(
     documentId: str,
+    includeTabsContent: bool = Query(False),
+    suggestionsViewMode: str = Query("SUGGESTIONS_INLINE"),
     db: Session = Depends(get_db),
     actor_user_id: str = Depends(resolve_actor_user_id),
 ):
     document = _get_document(db, actor_user_id, documentId)
-    return _document_to_resource(document)
+    return _document_to_resource(
+        document,
+        include_tabs_content=includeTabsContent,
+        suggestions_view_mode=suggestionsViewMode,
+    )
 
 
 @router.post("/documents", response_model=DocumentResource, response_model_exclude_none=True)
@@ -73,12 +88,13 @@ def create_document(
         id=uuid.uuid4().hex[:32],
         user_id=actor_user_id,
         title=body.title or "Untitled document",
+        description="",
         body_text=normalize_body_text(""),
         text_style_spans_json="[]",
         paragraph_style_json="[]",
         named_styles_json=dump_json_field(default_named_styles()),
         document_style_json=dump_json_field(default_document_style()),
-        revision_id=1,
+        revision_id=generate_revision_id(),
         created_at=now,
         updated_at=now,
     )
@@ -86,7 +102,7 @@ def create_document(
     user.history_id += 1
     db.commit()
     db.refresh(document)
-    return _document_to_resource(document)
+    return _document_to_resource(document, include_tabs=True)
 
 
 @router.post(
@@ -112,17 +128,25 @@ def batch_update_document(
             },
         )
 
-    next_body_text, next_text_spans_json, next_paragraph_style_json, replies = apply_batch_requests(
+    (
+        next_body_text,
+        next_text_spans_json,
+        next_paragraph_style_json,
+        next_document_style_json,
+        replies,
+    ) = apply_batch_requests(
         body_text=document.body_text,
         text_style_spans_json=document.text_style_spans_json,
         paragraph_style_json=document.paragraph_style_json,
+        document_style_json=document.document_style_json,
         requests=[request.model_dump(exclude_none=True) for request in body.requests],
     )
 
     document.body_text = next_body_text
     document.text_style_spans_json = next_text_spans_json
     document.paragraph_style_json = next_paragraph_style_json
-    document.revision_id += 1
+    document.document_style_json = next_document_style_json
+    document.revision_id = generate_revision_id()
     document.updated_at = datetime.now(timezone.utc)
 
     user = db.query(User).filter(User.id == actor_user_id).first()

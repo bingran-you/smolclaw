@@ -45,7 +45,11 @@ if HAS_GYM:
             "documents_create": ("POST", "/v1/documents"),
             "documents_batch_update": ("POST", "/v1/documents/{documentId}:batchUpdate"),
             "drive_files_list": ("GET", "/drive/v3/files"),
+            "drive_files_create": ("POST", "/drive/v3/files"),
             "drive_files_get": ("GET", "/drive/v3/files/{fileId}"),
+            "drive_files_copy": ("POST", "/drive/v3/files/{fileId}/copy"),
+            "drive_files_update": ("PATCH", "/drive/v3/files/{fileId}"),
+            "drive_files_delete": ("DELETE", "/drive/v3/files/{fileId}"),
             "drive_files_export": ("GET", "/drive/v3/files/{fileId}/export"),
         }
 
@@ -183,17 +187,32 @@ if HAS_GYM:
             try:
                 if method == "GET":
                     resp = self._client.get(path, params=args)
-                else:
+                elif method == "POST":
                     resp = self._client.post(path, json=args)
+                elif method == "PATCH":
+                    resp = self._client.patch(path, json=args)
+                elif method == "DELETE":
+                    resp = self._client.delete(path)
+                else:
+                    return {"error": f"Unsupported method: {method}"}
                 content_type = resp.headers.get("content-type", "")
                 if "application/json" in content_type:
                     return resp.json()
+                if resp.status_code == 204:
+                    return {"status": "no_content"}
                 return resp.text
             except Exception as exc:
                 return {"error": str(exc)}
 
         def _should_evaluate(self, tool_name: str) -> bool:
-            return tool_name in {"documents_batch_update", "documents_create"}
+            return tool_name in {
+                "documents_batch_update",
+                "documents_create",
+                "drive_files_create",
+                "drive_files_copy",
+                "drive_files_update",
+                "drive_files_delete",
+            }
 
         def _wait_for_server(self, timeout: float = 10.0):
             start = time.time()

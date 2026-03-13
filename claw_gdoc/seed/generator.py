@@ -9,7 +9,8 @@ from datetime import datetime, timedelta, timezone
 
 from sqlalchemy.orm import Session
 
-from claw_gdoc.models import Document, User, get_session_factory, init_db, reset_engine
+from claw_gdoc.api.render import default_document_style, default_named_styles, dump_json_field
+from claw_gdoc.models import Document, User, generate_revision_id, get_session_factory, init_db, reset_engine
 from claw_gdoc.state.snapshots import take_snapshot
 
 from .content import DEFAULT_DOCUMENTS, LAUNCH_CRUNCH_EXTRA_DOCUMENTS, SCENARIO_DEFINITIONS
@@ -40,6 +41,7 @@ def _seed_document(
     *,
     user: User,
     title: str,
+    description: str = "",
     body_text: str,
     text_spans: list[dict],
     paragraph_ops: list[dict],
@@ -50,12 +52,13 @@ def _seed_document(
             id=_document_id(),
             user_id=user.id,
             title=title,
+            description=description,
             body_text=body_text,
             text_style_spans_json=json.dumps(text_spans, separators=(",", ":"), sort_keys=True),
             paragraph_style_json=json.dumps(paragraph_ops, separators=(",", ":"), sort_keys=True),
-            named_styles_json='{"styles":[{"namedStyleType":"NORMAL_TEXT"},{"namedStyleType":"HEADING_1"},{"namedStyleType":"HEADING_2"},{"namedStyleType":"HEADING_3"}]}',
-            document_style_json='{"pageSize":{"width":{"magnitude":612,"unit":"PT"}}}',
-            revision_id=1,
+            named_styles_json=dump_json_field(default_named_styles()),
+            document_style_json=dump_json_field(default_document_style()),
+            revision_id=generate_revision_id(),
             created_at=created_at,
             updated_at=created_at,
             trashed=False,

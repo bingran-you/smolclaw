@@ -13,6 +13,7 @@ from .schemas import (
     Body,
     Bullet,
     DocumentResource,
+    DocumentTabResource,
     NamedStyles,
     Paragraph,
     ParagraphElement,
@@ -20,11 +21,43 @@ from .schemas import (
     ResponseItem,
     SectionBreak,
     StructuralElement,
+    TabResource,
     TextRun,
     TextStyle,
 )
 
-SUPPORTED_TEXT_STYLE_FIELDS = {"bold", "italic", "underline", "link"}
+SUPPORTED_TEXT_STYLE_FIELDS = {
+    "backgroundColor",
+    "baselineOffset",
+    "bold",
+    "fontSize",
+    "foregroundColor",
+    "italic",
+    "link",
+    "smallCaps",
+    "strikethrough",
+    "underline",
+    "weightedFontFamily",
+}
+SUPPORTED_PARAGRAPH_STYLE_FIELDS = {
+    "direction",
+    "indentFirstLine",
+    "indentStart",
+    "namedStyleType",
+}
+SUPPORTED_DOCUMENT_STYLE_FIELDS = {
+    "background",
+    "documentFormat",
+    "marginBottom",
+    "marginFooter",
+    "marginHeader",
+    "marginLeft",
+    "marginRight",
+    "marginTop",
+    "pageNumberStart",
+    "pageSize",
+    "useCustomHeaderFooterMargins",
+}
 
 
 def normalize_body_text(text: str | None) -> str:
@@ -39,16 +72,94 @@ def normalize_body_text(text: str | None) -> str:
 def default_named_styles() -> dict[str, Any]:
     return {
         "styles": [
-            {"namedStyleType": "NORMAL_TEXT"},
-            {"namedStyleType": "HEADING_1"},
-            {"namedStyleType": "HEADING_2"},
-            {"namedStyleType": "HEADING_3"},
+            {
+                "namedStyleType": "NORMAL_TEXT",
+                "paragraphStyle": {
+                    "alignment": "START",
+                    "direction": "LEFT_TO_RIGHT",
+                    "lineSpacing": 115,
+                    "namedStyleType": "NORMAL_TEXT",
+                    "spacingMode": "COLLAPSE_LISTS",
+                },
+                "textStyle": {
+                    "backgroundColor": {},
+                    "baselineOffset": "NONE",
+                    "bold": False,
+                    "fontSize": {"magnitude": 11, "unit": "PT"},
+                    "foregroundColor": {"color": {"rgbColor": {}}},
+                    "italic": False,
+                    "smallCaps": False,
+                    "strikethrough": False,
+                    "underline": False,
+                    "weightedFontFamily": {"fontFamily": "Arial", "weight": 400},
+                },
+            },
+            {
+                "namedStyleType": "HEADING_1",
+                "paragraphStyle": {
+                    "direction": "LEFT_TO_RIGHT",
+                    "keepLinesTogether": True,
+                    "keepWithNext": True,
+                    "spaceAbove": {"magnitude": 20, "unit": "PT"},
+                    "spaceBelow": {"magnitude": 6, "unit": "PT"},
+                },
+                "textStyle": {
+                    "bold": False,
+                    "fontSize": {"magnitude": 20, "unit": "PT"},
+                    "weightedFontFamily": {"fontFamily": "Arial", "weight": 400},
+                },
+            },
+            {
+                "namedStyleType": "HEADING_2",
+                "paragraphStyle": {
+                    "direction": "LEFT_TO_RIGHT",
+                    "keepLinesTogether": True,
+                    "keepWithNext": True,
+                    "spaceAbove": {"magnitude": 18, "unit": "PT"},
+                    "spaceBelow": {"magnitude": 6, "unit": "PT"},
+                },
+                "textStyle": {
+                    "bold": False,
+                    "fontSize": {"magnitude": 16, "unit": "PT"},
+                    "weightedFontFamily": {"fontFamily": "Arial", "weight": 400},
+                },
+            },
+            {
+                "namedStyleType": "HEADING_3",
+                "paragraphStyle": {
+                    "direction": "LEFT_TO_RIGHT",
+                    "keepLinesTogether": True,
+                    "keepWithNext": True,
+                    "spaceAbove": {"magnitude": 16, "unit": "PT"},
+                    "spaceBelow": {"magnitude": 4, "unit": "PT"},
+                },
+                "textStyle": {
+                    "bold": False,
+                    "fontSize": {"magnitude": 14, "unit": "PT"},
+                    "weightedFontFamily": {"fontFamily": "Arial", "weight": 400},
+                },
+            },
         ]
     }
 
 
 def default_document_style() -> dict[str, Any]:
-    return {"pageSize": {"width": {"magnitude": 612, "unit": "PT"}}}
+    return {
+        "background": {"color": {}},
+        "documentFormat": {"documentMode": "PAGES"},
+        "marginBottom": {"magnitude": 72, "unit": "PT"},
+        "marginFooter": {"magnitude": 36, "unit": "PT"},
+        "marginHeader": {"magnitude": 36, "unit": "PT"},
+        "marginLeft": {"magnitude": 72, "unit": "PT"},
+        "marginRight": {"magnitude": 72, "unit": "PT"},
+        "marginTop": {"magnitude": 72, "unit": "PT"},
+        "pageNumberStart": 1,
+        "pageSize": {
+            "height": {"magnitude": 792, "unit": "PT"},
+            "width": {"magnitude": 612, "unit": "PT"},
+        },
+        "useCustomHeaderFooterMargins": True,
+    }
 
 
 def load_json_field(raw: str, fallback):
@@ -71,9 +182,7 @@ def _style_for_index(spans: list[dict], index: int) -> dict[str, Any]:
     return style
 
 
-def _style_model(style: dict[str, Any]) -> TextStyle | None:
-    if not style:
-        return None
+def _style_model(style: dict[str, Any]) -> TextStyle:
     link = style.get("link")
     payload = dict(style)
     if isinstance(link, str):
@@ -82,18 +191,30 @@ def _style_model(style: dict[str, Any]) -> TextStyle | None:
 
 
 def _paragraph_meta(paragraph_ops: list[dict], start_index: int, end_index: int) -> dict[str, Any]:
-    meta = {"namedStyleType": "NORMAL_TEXT"}
+    meta: dict[str, Any] = {"direction": "LEFT_TO_RIGHT", "namedStyleType": "NORMAL_TEXT"}
     bullet_list_id = None
     for entry in paragraph_ops:
         overlaps = entry["startIndex"] < end_index and entry["endIndex"] > start_index
         if not overlaps:
             continue
+        style = entry.get("paragraphStyle", {})
+        for field in SUPPORTED_PARAGRAPH_STYLE_FIELDS:
+            value = style.get(field)
+            if value is not None:
+                meta[field] = value
         if entry.get("namedStyleType"):
             meta["namedStyleType"] = entry["namedStyleType"]
         if entry.get("bulletPreset"):
             bullet_list_id = entry.get("listId") or f"list-{start_index}"
     if bullet_list_id:
-        meta["bullet"] = Bullet(listId=bullet_list_id)
+        meta.setdefault("indentFirstLine", {"magnitude": 18, "unit": "PT"})
+        meta.setdefault("indentStart", {"magnitude": 36, "unit": "PT"})
+        meta["bullet"] = Bullet(
+            listId=bullet_list_id,
+            textStyle=TextStyle(underline=False),
+        )
+    if str(meta.get("namedStyleType", "")).startswith("HEADING_"):
+        meta.setdefault("headingId", f"h.mock.{start_index}")
     return meta
 
 
@@ -125,6 +246,9 @@ def render_document_resource(
     named_styles_json: str,
     document_style_json: str,
     revision_id: int | str,
+    include_tabs_content: bool = False,
+    include_tabs: bool = False,
+    suggestions_view_mode: str = "SUGGESTIONS_INLINE",
 ) -> DocumentResource:
     text = normalize_body_text(body_text)
     text_spans = load_json_field(text_style_spans_json, [])
@@ -133,7 +257,16 @@ def render_document_resource(
     document_style = load_json_field(document_style_json, default_document_style())
 
     content: list[StructuralElement] = [
-        StructuralElement(startIndex=0, endIndex=1, sectionBreak=SectionBreak())
+        StructuralElement(
+            endIndex=1,
+            sectionBreak=SectionBreak(
+                sectionStyle={
+                    "columnSeparatorStyle": "NONE",
+                    "contentDirection": "LEFT_TO_RIGHT",
+                    "sectionType": "CONTINUOUS",
+                }
+            ),
+        )
     ]
 
     start_index = 1
@@ -170,7 +303,15 @@ def render_document_resource(
                 endIndex=paragraph_end,
                 paragraph=Paragraph(
                     elements=elements,
-                    paragraphStyle=ParagraphStyle(namedStyleType=meta["namedStyleType"]),
+                    paragraphStyle=ParagraphStyle.model_validate(
+                        {
+                            "direction": meta.get("direction", "LEFT_TO_RIGHT"),
+                            "namedStyleType": meta["namedStyleType"],
+                            "headingId": meta.get("headingId"),
+                            "indentFirstLine": meta.get("indentFirstLine"),
+                            "indentStart": meta.get("indentStart"),
+                        }
+                    ),
                     bullet=meta.get("bullet"),
                 ),
             )
@@ -178,15 +319,41 @@ def render_document_resource(
         start_index = paragraph_end
         cursor += len(chunk)
 
-    return DocumentResource(
+    body = Body(content=content)
+    named_styles_model = NamedStyles.model_validate(named_styles)
+    lists_payload = _list_payload(paragraph_ops) or None
+
+    document_tab = TabResource(
+        tabProperties={
+            "index": 0,
+            "tabId": "tab-1",
+            "title": "Tab 1",
+        },
+        documentTab=DocumentTabResource(
+            body=body,
+            documentStyle=document_style,
+            namedStyles=named_styles_model,
+            lists=lists_payload,
+        ),
+    )
+
+    resource = DocumentResource(
         title=title,
         documentId=document_id,
         revisionId=str(revision_id),
-        body=Body(content=content),
-        documentStyle=document_style,
-        namedStyles=NamedStyles.model_validate(named_styles),
-        lists=_list_payload(paragraph_ops),
+        suggestionsViewMode=suggestions_view_mode,
     )
+    if include_tabs_content:
+        resource.tabs = [document_tab]
+        return resource
+
+    resource.body = body
+    resource.documentStyle = document_style
+    resource.namedStyles = named_styles_model
+    resource.lists = lists_payload
+    if include_tabs:
+        resource.tabs = [document_tab]
+    return resource
 
 
 def _shift_insert(entries: list[dict], index: int, delta: int) -> list[dict]:
@@ -285,6 +452,7 @@ def _merge_paragraph_ops(entries: list[dict]) -> list[dict]:
             entry.get("namedStyleType"),
             entry.get("bulletPreset"),
             entry.get("listId"),
+            dump_json_field(entry.get("paragraphStyle", {})),
         )
         if key in seen:
             continue
@@ -309,6 +477,20 @@ def _style_fields_to_list(fields: str) -> list[str]:
     return expanded
 
 
+def _merge_field_mask(
+    current: dict[str, Any],
+    updates: dict[str, Any],
+    requested_fields: list[str],
+) -> dict[str, Any]:
+    next_value = dict(current)
+    for field in requested_fields:
+        if field in updates:
+            next_value[field] = updates[field]
+        else:
+            next_value.pop(field, None)
+    return next_value
+
+
 @dataclass
 class EditorState:
     text: str
@@ -323,7 +505,7 @@ def _insert_text(state: EditorState, index: int, text: str, *, record_reply: boo
     state.text_spans = _shift_insert(state.text_spans, index, delta)
     state.paragraph_ops = _shift_insert(state.paragraph_ops, index, delta)
     if record_reply:
-        state.replies.append(ResponseItem(insertText={"insertedText": text}))
+        state.replies.append(ResponseItem())
 
 
 def _delete_range(state: EditorState, start_index: int, end_index: int, *, record_reply: bool = False):
@@ -387,7 +569,7 @@ def _update_text_style(state: EditorState, start_index: int, end_index: int, sty
         }
     )
     state.text_spans = _merge_style_spans(state.text, state.text_spans)
-    state.replies.append(ResponseItem(updateTextStyle={"applied": True}))
+    state.replies.append(ResponseItem())
 
 
 def _paragraph_ranges(text: str) -> list[tuple[int, int]]:
@@ -415,7 +597,94 @@ def _create_paragraph_bullets(state: EditorState, start_index: int, end_index: i
                 }
             )
     state.paragraph_ops = _merge_paragraph_ops(state.paragraph_ops + entries)
-    state.replies.append(ResponseItem(createParagraphBullets={"applied": True}))
+    state.replies.append(ResponseItem())
+
+
+def _update_paragraph_style(
+    state: EditorState,
+    start_index: int,
+    end_index: int,
+    style: dict[str, Any],
+    fields: str,
+):
+    if end_index <= start_index:
+        raise HTTPException(400, {"message": "Invalid updateParagraphStyle range", "reason": "badRequest"})
+    requested_fields = _style_fields_to_list(fields)
+    invalid = [field for field in requested_fields if field not in SUPPORTED_PARAGRAPH_STYLE_FIELDS]
+    if invalid:
+        raise HTTPException(
+            400,
+            {
+                "message": f"Unsupported paragraph style field(s): {', '.join(invalid)}",
+                "reason": "badRequest",
+            },
+        )
+
+    entries = []
+    for paragraph_start, paragraph_end in _paragraph_ranges(state.text):
+        overlaps = paragraph_start < end_index and paragraph_end > start_index
+        if not overlaps:
+            continue
+        existing = next(
+            (
+                entry for entry in state.paragraph_ops
+                if entry["startIndex"] == paragraph_start and entry["endIndex"] == paragraph_end
+            ),
+            {},
+        )
+        next_style = _merge_field_mask(existing.get("paragraphStyle", {}), style, requested_fields)
+        entry = {
+            "startIndex": paragraph_start,
+            "endIndex": paragraph_end,
+            "paragraphStyle": next_style,
+        }
+        if next_style.get("namedStyleType"):
+            entry["namedStyleType"] = next_style["namedStyleType"]
+        if existing.get("bulletPreset"):
+            entry["bulletPreset"] = existing.get("bulletPreset")
+            entry["listId"] = existing.get("listId")
+        entries.append(entry)
+
+    untouched = [
+        entry for entry in state.paragraph_ops
+        if not any(
+            entry["startIndex"] == candidate["startIndex"] and entry["endIndex"] == candidate["endIndex"]
+            for candidate in entries
+        )
+    ]
+    state.paragraph_ops = _merge_paragraph_ops(untouched + entries)
+    state.replies.append(ResponseItem())
+
+
+def _delete_paragraph_bullets(state: EditorState, start_index: int, end_index: int):
+    next_entries = []
+    for entry in state.paragraph_ops:
+        overlaps = entry["startIndex"] < end_index and entry["endIndex"] > start_index
+        if overlaps and entry.get("bulletPreset"):
+            updated = dict(entry)
+            updated.pop("bulletPreset", None)
+            updated.pop("listId", None)
+            next_entries.append(updated)
+            continue
+        next_entries.append(entry)
+    state.paragraph_ops = _merge_paragraph_ops(next_entries)
+    state.replies.append(ResponseItem())
+
+
+def _update_document_style(document_style_json: str, style: dict[str, Any], fields: str) -> str:
+    current = load_json_field(document_style_json, default_document_style())
+    requested_fields = _style_fields_to_list(fields)
+    invalid = [field for field in requested_fields if field not in SUPPORTED_DOCUMENT_STYLE_FIELDS]
+    if invalid:
+        raise HTTPException(
+            400,
+            {
+                "message": f"Unsupported document style field(s): {', '.join(invalid)}",
+                "reason": "badRequest",
+            },
+        )
+    next_style = _merge_field_mask(current, style, requested_fields)
+    return dump_json_field(next_style)
 
 
 def apply_batch_requests(
@@ -423,14 +692,16 @@ def apply_batch_requests(
     body_text: str,
     text_style_spans_json: str,
     paragraph_style_json: str,
+    document_style_json: str,
     requests: list[dict[str, Any]],
-) -> tuple[str, str, str, list[ResponseItem]]:
+) -> tuple[str, str, str, str, list[ResponseItem]]:
     state = EditorState(
         text=normalize_body_text(body_text),
         text_spans=load_json_field(text_style_spans_json, []),
         paragraph_ops=load_json_field(paragraph_style_json, []),
         replies=[],
     )
+    next_document_style_json = document_style_json
 
     for idx, request in enumerate(requests):
         try:
@@ -477,6 +748,20 @@ def apply_batch_requests(
                 )
                 continue
 
+            if request.get("updateParagraphStyle") is not None:
+                payload = request["updateParagraphStyle"]
+                span = payload["range"]
+                start_index = _validate_index(state.text, int(span["startIndex"]))
+                end_index = _validate_index(state.text, int(span["endIndex"]), allow_terminal=True)
+                _update_paragraph_style(
+                    state,
+                    start_index,
+                    end_index,
+                    payload.get("paragraphStyle", {}),
+                    payload.get("fields", ""),
+                )
+                continue
+
             if request.get("createParagraphBullets") is not None:
                 payload = request["createParagraphBullets"]
                 span = payload["range"]
@@ -488,6 +773,24 @@ def apply_batch_requests(
                     end_index,
                     payload.get("bulletPreset", "BULLET_DISC_CIRCLE_SQUARE"),
                 )
+                continue
+
+            if request.get("deleteParagraphBullets") is not None:
+                payload = request["deleteParagraphBullets"]
+                span = payload["range"]
+                start_index = _validate_index(state.text, int(span["startIndex"]))
+                end_index = _validate_index(state.text, int(span["endIndex"]), allow_terminal=True)
+                _delete_paragraph_bullets(state, start_index, end_index)
+                continue
+
+            if request.get("updateDocumentStyle") is not None:
+                payload = request["updateDocumentStyle"]
+                next_document_style_json = _update_document_style(
+                    next_document_style_json,
+                    payload.get("documentStyle", {}),
+                    payload.get("fields", ""),
+                )
+                state.replies.append(ResponseItem())
                 continue
 
             raise HTTPException(
@@ -510,5 +813,6 @@ def apply_batch_requests(
         normalize_body_text(state.text),
         dump_json_field(state.text_spans),
         dump_json_field(state.paragraph_ops),
+        next_document_style_json,
         state.replies,
     )

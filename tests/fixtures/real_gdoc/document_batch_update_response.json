@@ -1,13 +1,9 @@
 {
   "documentId": "doc_fixture",
   "replies": [
-    {
-      "insertText": {
-        "insertedText": "Shape "
-      }
-    }
+    {}
   ],
   "writeControl": {
-    "requiredRevisionId": "2"
+    "requiredRevisionId": "opaque_revision_id"
   }
 }

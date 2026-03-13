@@ -65,13 +65,22 @@ class TestDocsConformance:
 class TestDriveConformance:
     def test_file_list_shape(self, gdoc_client):
         real = load_fixture(GDRIVE_FIXTURES, "file_list_docs.json")
-        mock = gdoc_client.get("/drive/v3/files", params={"pageSize": 2}).json()
+        mock = gdoc_client.get(
+            "/drive/v3/files",
+            params={
+                "pageSize": 2,
+                "fields": "kind,nextPageToken,files(kind,id,name,mimeType,createdTime,modifiedTime,trashed,webViewLink,iconLink,exportLinks)",
+            },
+        ).json()
         assert set(real.keys()) == set(mock.keys())
         _assert_shape(real, mock)
 
     def test_file_get_shape(self, gdoc_client):
         real = load_fixture(GDRIVE_FIXTURES, "file_get_doc.json")
         file_id = _first_document_id(gdoc_client)
-        mock = gdoc_client.get(f"/drive/v3/files/{file_id}").json()
+        mock = gdoc_client.get(
+            f"/drive/v3/files/{file_id}",
+            params={"fields": "kind,id,name,mimeType,createdTime,modifiedTime,trashed,webViewLink,iconLink,exportLinks"},
+        ).json()
         assert set(real.keys()) == set(mock.keys())
         _assert_shape(real, mock)
