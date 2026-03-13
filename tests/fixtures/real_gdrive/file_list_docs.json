@@ -1,0 +1,21 @@
+{
+  "kind": "drive#fileList",
+  "files": [
+    {
+      "kind": "drive#file",
+      "id": "doc_fixture",
+      "name": "Agent Runbooks PRD",
+      "mimeType": "application/vnd.google-apps.document",
+      "createdTime": "2026-03-01T00:00:00Z",
+      "modifiedTime": "2026-03-01T00:00:00Z",
+      "trashed": false,
+      "webViewLink": "https://docs.google.com/document/d/doc_fixture/edit",
+      "iconLink": "https://drive-thirdparty.googleusercontent.com/16/type/application/vnd.google-apps.document",
+      "exportLinks": {
+        "text/plain": "/drive/v3/files/doc_fixture/export?mimeType=text/plain",
+        "text/html": "/drive/v3/files/doc_fixture/export?mimeType=text/html"
+      }
+    }
+  ],
+  "nextPageToken": "2"
+}

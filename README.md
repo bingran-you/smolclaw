@@ -5,6 +5,7 @@ Mock environments for AI agent testing with seeded, deterministic Google Workspa
 > We are actively restructuring the repo to support more environments (Calendar, Drive, Slack) and adding reliability tests to existing ones.
 
 `claw_gcal` provides a mock Google Calendar environment with the same seed/serve/reset/admin flow as `claw_gmail`.
+`claw_gdoc` provides a mock Google Docs + Drive bridge environment for document-centric agent workflows.
 
 ## Install
 
@@ -39,16 +40,29 @@ smolclaw-gcal serve --port 8002 --no-mcp
 
 Calendar API base URL: `http://localhost:8002/calendar/v3/`
 
+Seed and run the Docs environment:
+
+```bash
+smolclaw-gdoc seed --scenario default
+smolclaw-gdoc serve --port 8003 --no-mcp
+```
+
+Docs API base URL: `http://localhost:8003/v1/`
+Drive bridge base URL: `http://localhost:8003/drive/v3/`
+
 Interactive API docs:
 
 - Gmail: `http://localhost:8001/docs`
 - Calendar: `http://localhost:8002/docs`
+- Docs: `http://localhost:8003/docs`
 
 ## What's included
 
 **54 Gmail API endpoints** — messages, threads, labels, drafts, settings, send-as, forwarding, delegates, vacation, filters, contacts, attachments.
 
 **38 Google Calendar API endpoints** — calendarList, calendars, events, ACL, settings, colors, freeBusy, watch/channels, profile.
+
+**6 Google Docs / Drive bridge endpoints** — documents.get, documents.create, documents.batchUpdate, drive files.list/get/export.
 
 **Seedable scenarios** — `default`, `launch_crunch`, `travel_heavy`, `long_context`, and per-task scenarios for both environments.
 
@@ -71,6 +85,9 @@ smolclaw reset                      # restore to initial state
 | Calendar | `launch_crunch` | ~96 events | Launch-heavy calendar with war rooms, leadership syncs, and operational load |
 | Calendar | `travel_heavy` | ~88 events | Conference and customer travel with dense logistics and follow-up work |
 | Calendar | `long_context` | ~1400 events | Stress test with dense event history and recurrence |
+| Docs | `default` | 6 docs | Core PRD, strategy, launch, notes, incident, onboarding documents |
+| Docs | `launch_crunch` | 9 docs | Launch-heavy extension with war room and FAQ documents |
+| Docs | `long_context` | 160 docs | Stress test with large document inventory and repeated editing patterns |
 
 The Calendar seed content is organized as a reusable content library with named personas, shared calendar templates, fixed needles, reusable event pools, and scenario presets so agents see more realistic scheduling, security/compliance, and travel patterns without sacrificing determinism.
 
@@ -82,6 +99,8 @@ smolclaw serve --host 0.0.0.0        # bind to all interfaces
 smolclaw serve --port 9000           # custom port
 smolclaw-gcal --db mycal.db seed     # custom Calendar database path
 smolclaw-gcal serve --port 9002      # custom Calendar port
+smolclaw-gdoc --db mydocs.db seed    # custom Docs database path
+smolclaw-gdoc serve --port 9003      # custom Docs port
 ```
 
 ## Development
@@ -94,6 +113,8 @@ python scripts/validate_gcal_seed.py --scenario long_context
 python scripts/gws_calendar_mock_real_compare.py
 pytest tests/test_api.py tests/test_conformance.py tests/test_settings.py tests/test_mime.py
 python scripts/validate_seed.py
+pytest tests/test_gdoc_api.py tests/test_gdoc_conformance.py tests/test_gdoc_seed.py
+python scripts/validate_gdoc_seed.py --scenario long_context
 ```
 
 ```bash
