@@ -10,7 +10,15 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy.orm import Session
 
 from claw_gdoc.api.render import default_document_style, default_named_styles, dump_json_field
-from claw_gdoc.models import Document, User, generate_revision_id, get_session_factory, init_db, reset_engine
+from claw_gdoc.models import (
+    Document,
+    DocumentPermission,
+    User,
+    generate_revision_id,
+    get_session_factory,
+    init_db,
+    reset_engine,
+)
 from claw_gdoc.state.snapshots import take_snapshot
 
 from .content import DEFAULT_DOCUMENTS, LAUNCH_CRUNCH_EXTRA_DOCUMENTS, SCENARIO_DEFINITIONS
@@ -47,23 +55,68 @@ def _seed_document(
     paragraph_ops: list[dict],
     created_at: datetime,
 ):
+    document = Document(
+        id=_document_id(),
+        user_id=user.id,
+        title=title,
+        description=description,
+        body_text=body_text,
+        text_style_spans_json=json.dumps(text_spans, separators=(",", ":"), sort_keys=True),
+        paragraph_style_json=json.dumps(paragraph_ops, separators=(",", ":"), sort_keys=True),
+        named_ranges_json="[]",
+        named_styles_json=dump_json_field(default_named_styles()),
+        document_style_json=dump_json_field(default_document_style()),
+        revision_id=generate_revision_id(),
+        created_at=created_at,
+        updated_at=created_at,
+        trashed=False,
+    )
+    db.add(document)
     db.add(
-        Document(
-            id=_document_id(),
+        DocumentPermission(
+            id=f"perm_{uuid.uuid4().hex[:24]}",
+            document_id=document.id,
             user_id=user.id,
-            title=title,
-            description=description,
-            body_text=body_text,
-            text_style_spans_json=json.dumps(text_spans, separators=(",", ":"), sort_keys=True),
-            paragraph_style_json=json.dumps(paragraph_ops, separators=(",", ":"), sort_keys=True),
-            named_styles_json=dump_json_field(default_named_styles()),
-            document_style_json=dump_json_field(default_document_style()),
-            revision_id=generate_revision_id(),
+            email_address=user.email_address,
+            role="owner",
+            permission_type="user",
+            allow_file_discovery=False,
             created_at=created_at,
-            updated_at=created_at,
-            trashed=False,
         )
     )
+
+
+def _seed_shared_access(db: Session, users: list[User]) -> None:
+    if len(users) < 2:
+        return
+
+    docs_by_owner = {
+        user.id: {
+            document.title: document
+            for document in db.query(Document).filter(Document.user_id == user.id).all()
+        }
+        for user in users
+    }
+    shares = [
+        (users[0], users[1], "Launch Checklist", "writer"),
+        (users[1], users[0], "Incident Review - API Timeout", "reader"),
+    ]
+    for owner, collaborator, title, role in shares:
+        document = docs_by_owner.get(owner.id, {}).get(title)
+        if document is None:
+            continue
+        db.add(
+            DocumentPermission(
+                id=f"perm_{uuid.uuid4().hex[:24]}",
+                document_id=document.id,
+                user_id=collaborator.id,
+                email_address=collaborator.email_address,
+                role=role,
+                permission_type="user",
+                allow_file_discovery=False,
+                created_at=document.created_at,
+            )
+        )
 
 
 def seed_default_scenario(db: Session, user: User, rng: random.Random) -> int:
@@ -165,12 +218,16 @@ def seed_database(
     db = session_factory()
     try:
         total_documents = 0
+        users: list[User] = []
         for idx in range(num_users):
             user = _create_user(idx + 1)
             db.add(user)
             db.flush()
+            users.append(user)
             total_documents += scenario_fn(db, user, rng)
             user.history_id = total_documents + 1
+
+        _seed_shared_access(db, users)
 
         db.commit()
         take_snapshot("initial")

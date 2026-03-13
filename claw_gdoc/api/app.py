@@ -14,7 +14,8 @@ from claw_gdoc.models import Document, User, get_session_factory
 from claw_gdoc.state.action_log import action_log
 from claw_gdoc.state.snapshots import get_diff, get_state_dump, restore_snapshot, take_snapshot
 
-from . import documents, drive
+from . import changes, documents, drive, permissions
+from .access import list_accessible_documents
 from .deps import get_db, resolve_user_id
 from .schemas import Profile
 
@@ -117,6 +118,8 @@ DRIVE_PREFIX = "/drive/v3"
 
 app.include_router(documents.router, prefix=GDOC_PREFIX, tags=["documents"])
 app.include_router(drive.router, prefix=DRIVE_PREFIX, tags=["drive"])
+app.include_router(permissions.router, prefix=DRIVE_PREFIX, tags=["permissions"])
+app.include_router(changes.router, prefix=DRIVE_PREFIX, tags=["changes"])
 
 
 @app.get(f"{GDOC_PREFIX}/users/{{userId}}/profile", response_model=Profile, tags=["profile"])
@@ -126,10 +129,9 @@ def get_profile(
     _user_id: str = Depends(resolve_user_id),
 ):
     user = db.query(User).filter(User.id == _user_id).first()
-    document_count = db.query(Document).filter(
-        Document.user_id == _user_id,
-        Document.trashed.is_(False),
-    ).count()
+    document_count = sum(
+        1 for document, _permission in list_accessible_documents(db, _user_id) if not document.trashed
+    )
     return Profile(
         emailAddress=user.email_address,
         displayName=user.display_name,

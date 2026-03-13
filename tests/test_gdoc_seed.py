@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from claw_gdoc.models import Document, get_session_factory, init_db, reset_engine
+from claw_gdoc.models import Document, DocumentPermission, get_session_factory, init_db, reset_engine
 from claw_gdoc.seed.content import DEFAULT_DOCUMENTS, LAUNCH_CRUNCH_EXTRA_DOCUMENTS, SCENARIO_DEFINITIONS
 from claw_gdoc.seed.generator import SCENARIOS, seed_database
 
@@ -78,4 +78,16 @@ def test_seed_scales_with_user_count(tmp_path):
 
     assert result["users"] == 2
     assert result["documents"] == SCENARIO_DEFINITIONS["default"]["target_documents"] * 2
+
+    db = _open_db(db_path)
+    try:
+        shared_permissions = (
+            db.query(DocumentPermission)
+            .filter(DocumentPermission.role != "owner")
+            .all()
+        )
+        assert len(shared_permissions) >= 2
+        assert any(permission.email_address == "alex2@nexusai.com" for permission in shared_permissions)
+    finally:
+        db.close()
     reset_engine()

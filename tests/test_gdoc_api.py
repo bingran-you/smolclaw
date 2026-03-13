@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+from docx import Document as DocxReader
 from fastapi.testclient import TestClient
 import pytest
+from io import BytesIO
 
 from claw_gdoc.models import get_session_factory, init_db, reset_engine
 from claw_gdoc.seed.generator import seed_database
@@ -34,10 +36,32 @@ def gdoc_client(gdoc_seeded_db):
     reset_engine()
 
 
+@pytest.fixture
+def gdoc_multi_seeded_db(gdoc_db_path):
+    reset_engine()
+    seed_database(scenario="default", seed=42, db_path=gdoc_db_path, num_users=2)
+    return gdoc_db_path
+
+
+@pytest.fixture
+def gdoc_multi_client(gdoc_multi_seeded_db):
+    reset_engine()
+    init_db(gdoc_multi_seeded_db)
+    from claw_gdoc.api.app import app
+
+    with TestClient(app) as client:
+        yield client
+    reset_engine()
+
+
 def _first_document_id(client: TestClient) -> str:
     resp = client.get("/drive/v3/files")
     assert resp.status_code == 200
     return resp.json()["files"][0]["id"]
+
+
+def _headers(user_id: str) -> dict[str, str]:
+    return {"X-Claw-Gdoc-User": user_id}
 
 
 class TestHealthProfileAdmin:
@@ -80,6 +104,12 @@ class TestHealthProfileAdmin:
         assert reset.status_code == 200
         after = gdoc_client.get("/drive/v3/files").json()["files"]
         assert len(after) == len(before)
+
+    def test_admin_tasks_exposes_default_docs_task(self, gdoc_client):
+        resp = gdoc_client.get("/_admin/tasks")
+        assert resp.status_code == 200
+        tasks = resp.json()["tasks"]
+        assert any(task["name"] == "cap-docs-01" for task in tasks)
 
 
 class TestDocuments:
@@ -282,6 +312,64 @@ class TestDocuments:
         assert resp.status_code == 400
         assert resp.json()["error"]["reason"] == "failedPrecondition"
 
+    def test_named_range_create_replace_delete(self, gdoc_client):
+        files = gdoc_client.get("/drive/v3/files").json()["files"]
+        checklist = next(file for file in files if file["name"] == "Launch Checklist")
+        text = gdoc_client.get(
+            f"/drive/v3/files/{checklist['id']}/export",
+            params={"mimeType": "text/plain"},
+        ).text
+        needle = "ReplaceMe Launch Owner"
+        start = text.index(needle) + 1
+        end = start + len(needle)
+
+        create = gdoc_client.post(
+            f"/v1/documents/{checklist['id']}:batchUpdate",
+            json={
+                "requests": [
+                    {
+                        "createNamedRange": {
+                            "name": "launch_owner",
+                            "range": {"startIndex": start, "endIndex": end},
+                        }
+                    }
+                ]
+            },
+        )
+        assert create.status_code == 200
+        named_range_id = create.json()["replies"][0]["createNamedRange"]["namedRangeId"]
+
+        replace = gdoc_client.post(
+            f"/v1/documents/{checklist['id']}:batchUpdate",
+            json={
+                "requests": [
+                    {
+                        "replaceNamedRangeContent": {
+                            "namedRangeId": named_range_id,
+                            "text": "Jamie Rivera",
+                        }
+                    }
+                ]
+            },
+        )
+        assert replace.status_code == 200
+
+        document = gdoc_client.get(f"/v1/documents/{checklist['id']}").json()
+        assert "launch_owner" in document["namedRanges"]
+        updated_text = gdoc_client.get(
+            f"/drive/v3/files/{checklist['id']}/export",
+            params={"mimeType": "text/plain"},
+        ).text
+        assert "Jamie Rivera" in updated_text
+
+        delete = gdoc_client.post(
+            f"/v1/documents/{checklist['id']}:batchUpdate",
+            json={"requests": [{"deleteNamedRange": {"namedRangeId": named_range_id}}]},
+        )
+        assert delete.status_code == 200
+        after = gdoc_client.get(f"/v1/documents/{checklist['id']}").json()
+        assert "namedRanges" not in after or "launch_owner" not in after.get("namedRanges", {})
+
 
 class TestDriveBridge:
     def test_list_get_export(self, gdoc_client):
@@ -366,3 +454,153 @@ class TestDriveBridge:
 
         missing = gdoc_client.get(f"/drive/v3/files/{copied_id}")
         assert missing.status_code == 404
+
+    def test_export_structured_formats(self, gdoc_client):
+        files = gdoc_client.get("/drive/v3/files").json()["files"]
+        runbooks = next(file for file in files if file["name"] == "Agent Runbooks PRD")
+
+        html_resp = gdoc_client.get(
+            f"/drive/v3/files/{runbooks['id']}/export",
+            params={"mimeType": "text/html"},
+        )
+        assert html_resp.status_code == 200
+        assert "<h1>Agent Runbooks PRD</h1>" in html_resp.text
+        assert '<a href="https://nexusai.com/roadmap">' in html_resp.text
+
+        markdown_resp = gdoc_client.get(
+            f"/drive/v3/files/{runbooks['id']}/export",
+            params={"mimeType": "text/markdown"},
+        )
+        assert markdown_resp.status_code == 200
+        assert markdown_resp.text.startswith("# Agent Runbooks PRD\n")
+        assert "[https://nexusai.com/roadmap](https://nexusai.com/roadmap)" in markdown_resp.text
+
+        docx_resp = gdoc_client.get(
+            f"/drive/v3/files/{runbooks['id']}/export",
+            params={"mimeType": "application/vnd.openxmlformats-officedocument.wordprocessingml.document"},
+        )
+        assert docx_resp.status_code == 200
+        parsed = DocxReader(BytesIO(docx_resp.content))
+        assert parsed.paragraphs[0].text == "Agent Runbooks PRD"
+
+    def test_changes_feed_tracks_document_lifecycle(self, gdoc_client):
+        token = gdoc_client.get("/drive/v3/changes/startPageToken").json()["startPageToken"]
+
+        create = gdoc_client.post("/drive/v3/files", json={"name": "Changed Doc"})
+        assert create.status_code == 200
+        file_id = create.json()["id"]
+
+        update = gdoc_client.patch(f"/drive/v3/files/{file_id}", json={"description": "Tracked"})
+        assert update.status_code == 200
+
+        changes = gdoc_client.get("/drive/v3/changes", params={"pageToken": token})
+        assert changes.status_code == 200
+        payload = changes.json()
+        assert [change["changeType"] for change in payload["changes"]] == ["fileCreated", "fileUpdated"]
+        assert payload["changes"][0]["fileId"] == file_id
+        assert payload["newStartPageToken"]
+
+
+class TestSharingAndPermissions:
+    def test_permission_crud_and_shared_access(self, gdoc_multi_client):
+        create = gdoc_multi_client.post(
+            "/drive/v3/files",
+            headers=_headers("user1"),
+            json={"name": "Shared Handoff"},
+        )
+        assert create.status_code == 200
+        file_id = create.json()["id"]
+
+        share = gdoc_multi_client.post(
+            f"/drive/v3/files/{file_id}/permissions",
+            headers=_headers("user1"),
+            json={"emailAddress": "alex2@nexusai.com", "role": "reader"},
+        )
+        assert share.status_code == 200
+        permission_id = share.json()["id"]
+
+        listed = gdoc_multi_client.get(
+            f"/drive/v3/files/{file_id}/permissions",
+            headers=_headers("user1"),
+        )
+        assert listed.status_code == 200
+        assert any(permission["emailAddress"] == "alex2@nexusai.com" for permission in listed.json()["permissions"])
+
+        fetched = gdoc_multi_client.get(
+            f"/drive/v3/files/{file_id}/permissions/{permission_id}",
+            headers=_headers("user1"),
+        )
+        assert fetched.status_code == 200
+        assert fetched.json()["role"] == "reader"
+
+        profile = gdoc_multi_client.get("/v1/users/me/profile", headers=_headers("user2"))
+        assert profile.status_code == 200
+        assert profile.json()["documentsTotal"] == 8
+
+        shared = gdoc_multi_client.get("/drive/v3/files", headers=_headers("user2"))
+        shared_handoff = next(file for file in shared.json()["files"] if file["name"] == "Shared Handoff")
+        assert shared_handoff["ownedByMe"] is False
+
+        denied_edit = gdoc_multi_client.post(
+            f"/v1/documents/{file_id}:batchUpdate",
+            headers=_headers("user2"),
+            json={"requests": [{"insertText": {"location": {"index": 1}, "text": "X"}}]},
+        )
+        assert denied_edit.status_code == 404
+
+        upgrade = gdoc_multi_client.patch(
+            f"/drive/v3/files/{file_id}/permissions/{permission_id}",
+            headers=_headers("user1"),
+            json={"role": "writer"},
+        )
+        assert upgrade.status_code == 200
+        assert upgrade.json()["role"] == "writer"
+
+        edit = gdoc_multi_client.post(
+            f"/v1/documents/{file_id}:batchUpdate",
+            headers=_headers("user2"),
+            json={"requests": [{"insertText": {"location": {"index": 1}, "text": "Team: "}}]},
+        )
+        assert edit.status_code == 200
+
+        shared_doc = gdoc_multi_client.get(f"/v1/documents/{file_id}", headers=_headers("user1")).json()
+        assert shared_doc["body"]["content"][1]["paragraph"]["elements"][0]["textRun"]["content"].startswith("Team:")
+
+        revoke = gdoc_multi_client.delete(
+            f"/drive/v3/files/{file_id}/permissions/{permission_id}",
+            headers=_headers("user1"),
+        )
+        assert revoke.status_code == 204
+
+        missing = gdoc_multi_client.get(f"/drive/v3/files/{file_id}", headers=_headers("user2"))
+        assert missing.status_code == 404
+
+    def test_changes_feed_includes_permission_changes_for_collaborator(self, gdoc_multi_client):
+        token = gdoc_multi_client.get(
+            "/drive/v3/changes/startPageToken",
+            headers=_headers("user2"),
+        ).json()["startPageToken"]
+        create = gdoc_multi_client.post(
+            "/drive/v3/files",
+            headers=_headers("user1"),
+            json={"name": "Collab Notes"},
+        )
+        file_id = create.json()["id"]
+
+        share = gdoc_multi_client.post(
+            f"/drive/v3/files/{file_id}/permissions",
+            headers=_headers("user1"),
+            json={"emailAddress": "alex2@nexusai.com", "role": "writer"},
+        )
+        assert share.status_code == 200
+
+        changes = gdoc_multi_client.get(
+            "/drive/v3/changes",
+            headers=_headers("user2"),
+            params={"pageToken": token},
+        )
+        assert changes.status_code == 200
+        payload = changes.json()
+        assert payload["changes"][0]["changeType"] == "permissionChanged"
+        assert payload["changes"][0]["fileId"] == file_id
+        assert payload["changes"][0]["file"]["ownedByMe"] is False

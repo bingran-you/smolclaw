@@ -10,7 +10,9 @@ from sqlalchemy.orm import Session
 
 from claw_gdoc.models import Document, User, generate_revision_id
 
+from .access import require_document_access
 from .deps import get_db, resolve_actor_user_id
+from .history_tracker import ensure_owner_permission, record_document_change
 from .render import (
     apply_batch_requests,
     default_document_style,
@@ -24,13 +26,22 @@ from .schemas import BatchUpdateRequest, BatchUpdateResponse, DocumentCreateRequ
 router = APIRouter()
 
 
-def _get_document(db: Session, actor_user_id: str, document_id: str) -> Document:
-    document = db.query(Document).filter(
-        Document.id == document_id,
-        Document.user_id == actor_user_id,
-        Document.trashed.is_(False),
-    ).first()
-    if not document:
+def _get_document(
+    db: Session,
+    actor_user_id: str,
+    document_id: str,
+    *,
+    minimum_role: str = "reader",
+) -> Document:
+    document = db.query(Document).filter(Document.id == document_id).first()
+    document, _permission = require_document_access(
+        db,
+        document,
+        actor_user_id,
+        minimum_role=minimum_role,
+        not_found_message="Document not found",
+    )
+    if document.trashed:
         raise HTTPException(404, "Document not found")
     return document
 
@@ -48,6 +59,7 @@ def _document_to_resource(
         body_text=document.body_text,
         text_style_spans_json=document.text_style_spans_json,
         paragraph_style_json=document.paragraph_style_json,
+        named_ranges_json=document.named_ranges_json,
         named_styles_json=document.named_styles_json,
         document_style_json=document.document_style_json,
         revision_id=document.revision_id,
@@ -92,6 +104,7 @@ def create_document(
         body_text=normalize_body_text(""),
         text_style_spans_json="[]",
         paragraph_style_json="[]",
+        named_ranges_json="[]",
         named_styles_json=dump_json_field(default_named_styles()),
         document_style_json=dump_json_field(default_document_style()),
         revision_id=generate_revision_id(),
@@ -99,7 +112,9 @@ def create_document(
         updated_at=now,
     )
     db.add(document)
-    user.history_id += 1
+    db.flush()
+    ensure_owner_permission(db, document)
+    record_document_change(db, document, change_type="fileCreated")
     db.commit()
     db.refresh(document)
     return _document_to_resource(document, include_tabs=True)
@@ -116,7 +131,7 @@ def batch_update_document(
     db: Session = Depends(get_db),
     actor_user_id: str = Depends(resolve_actor_user_id),
 ):
-    document = _get_document(db, actor_user_id, documentId)
+    document = _get_document(db, actor_user_id, documentId, minimum_role="writer")
 
     required_revision = body.writeControl.requiredRevisionId if body.writeControl else None
     if required_revision and required_revision != str(document.revision_id):
@@ -132,12 +147,14 @@ def batch_update_document(
         next_body_text,
         next_text_spans_json,
         next_paragraph_style_json,
+        next_named_ranges_json,
         next_document_style_json,
         replies,
     ) = apply_batch_requests(
         body_text=document.body_text,
         text_style_spans_json=document.text_style_spans_json,
         paragraph_style_json=document.paragraph_style_json,
+        named_ranges_json=document.named_ranges_json,
         document_style_json=document.document_style_json,
         requests=[request.model_dump(exclude_none=True) for request in body.requests],
     )
@@ -145,13 +162,11 @@ def batch_update_document(
     document.body_text = next_body_text
     document.text_style_spans_json = next_text_spans_json
     document.paragraph_style_json = next_paragraph_style_json
+    document.named_ranges_json = next_named_ranges_json
     document.document_style_json = next_document_style_json
     document.revision_id = generate_revision_id()
     document.updated_at = datetime.now(timezone.utc)
-
-    user = db.query(User).filter(User.id == actor_user_id).first()
-    if user:
-        user.history_id += 1
+    record_document_change(db, document, change_type="fileUpdated")
 
     db.commit()
     db.refresh(document)

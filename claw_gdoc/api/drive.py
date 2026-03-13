@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 from datetime import datetime, timezone
+from html import escape
 from io import BytesIO
 from uuid import uuid4
 
@@ -11,10 +12,12 @@ from docx import Document as DocxDocument
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy.orm import Session
 
-from claw_gdoc.models import Document, generate_revision_id
+from claw_gdoc.models import ChangeRecord, Document, DocumentPermission, generate_revision_id
 
+from .access import list_accessible_documents, require_document_access
 from .deps import get_db, resolve_actor_user_id
-from .render import default_document_style, default_named_styles, dump_json_field
+from .history_tracker import ensure_owner_permission, record_document_change
+from .render import default_document_style, default_named_styles, dump_json_field, render_document_resource
 from .schemas import DriveFileList, DriveFileResource
 
 router = APIRouter()
@@ -46,7 +49,7 @@ def _export_links(document_id: str) -> dict[str, str]:
     }
 
 
-def _drive_file_payload(document: Document) -> dict[str, object]:
+def _drive_file_payload(document: Document, *, owned_by_me: bool = True) -> dict[str, object]:
     return {
         "kind": "drive#file",
         "id": document.id,
@@ -56,7 +59,7 @@ def _drive_file_payload(document: Document) -> dict[str, object]:
         "createdTime": _iso_z(document.created_at),
         "modifiedTime": _iso_z(document.updated_at),
         "trashed": document.trashed,
-        "ownedByMe": True,
+        "ownedByMe": owned_by_me,
         "webViewLink": f"https://docs.google.com/document/d/{document.id}/edit?usp=drivesdk",
         "iconLink": "https://drive-thirdparty.googleusercontent.com/16/type/application/vnd.google-apps.document",
         "exportLinks": _export_links(document.id),
@@ -65,40 +68,54 @@ def _drive_file_payload(document: Document) -> dict[str, object]:
 
 def _requested_get_fields(fields: str | None) -> set[str]:
     if not fields:
-        return {"kind", "id", "name", "mimeType"}
+        return {"kind", "id", "name", "mimeType", "ownedByMe"}
     return {field.strip() for field in fields.split(",") if field.strip()}
 
 
 def _requested_list_fields(fields: str | None) -> tuple[set[str], set[str]]:
     if not fields:
-        return {"kind", "files", "nextPageToken"}, {"kind", "id", "name", "mimeType"}
+        return {"kind", "files", "nextPageToken"}, {"kind", "id", "name", "mimeType", "ownedByMe"}
     top_fields = {
         field.strip()
         for field in _LIST_FIELDS_RE.sub("", fields).split(",")
         if field.strip()
     }
     match = _LIST_FIELDS_RE.search(fields)
-    file_fields = {"kind", "id", "name", "mimeType"}
+    file_fields = {"kind", "id", "name", "mimeType", "ownedByMe"}
     if match:
         top_fields.add("files")
         file_fields = {field.strip() for field in match.group(1).split(",") if field.strip()}
     return top_fields or {"kind", "files"}, file_fields
 
 
-def _drive_file_resource(document: Document, *, fields: str | None = None) -> DriveFileResource:
-    payload = _drive_file_payload(document)
+def _drive_file_resource(
+    document: Document,
+    *,
+    fields: str | None = None,
+    owned_by_me: bool = True,
+) -> DriveFileResource:
+    payload = _drive_file_payload(document, owned_by_me=owned_by_me)
     selected = {field: payload[field] for field in _requested_get_fields(fields) if field in payload}
     return DriveFileResource.model_validate(selected)
 
 
-def _resolve_document(db: Session, actor_user_id: str, file_id: str) -> Document:
-    document = db.query(Document).filter(
-        Document.id == file_id,
-        Document.user_id == actor_user_id,
-    ).first()
-    if not document:
-        raise HTTPException(404, "File not found")
-    return document
+def _resolve_document(
+    db: Session,
+    actor_user_id: str,
+    file_id: str,
+    *,
+    minimum_role: str = "reader",
+) -> tuple[Document, bool]:
+    document = db.query(Document).filter(Document.id == file_id).first()
+    document, permission = require_document_access(
+        db,
+        document,
+        actor_user_id,
+        minimum_role=minimum_role,
+        not_found_message="File not found",
+    )
+    owned_by_me = permission.role == "owner" and permission.user_id == document.user_id
+    return document, owned_by_me
 
 
 def _match_query(document: Document, query: str) -> bool:
@@ -157,6 +174,114 @@ def _document_text_to_markdown(text: str) -> str:
     return text
 
 
+def _document_resource_for_export(document: Document):
+    return render_document_resource(
+        document_id=document.id,
+        title=document.title,
+        body_text=document.body_text,
+        text_style_spans_json=document.text_style_spans_json,
+        paragraph_style_json=document.paragraph_style_json,
+        named_ranges_json=document.named_ranges_json,
+        named_styles_json=document.named_styles_json,
+        document_style_json=document.document_style_json,
+        revision_id=document.revision_id,
+    )
+
+
+def _run_to_html(text: str, text_style: dict) -> str:
+    rendered = escape(text)
+    link = (text_style.get("link") or {}).get("url")
+    if link:
+        rendered = f'<a href="{escape(link, quote=True)}">{rendered}</a>'
+    if text_style.get("bold"):
+        rendered = f"<strong>{rendered}</strong>"
+    if text_style.get("italic"):
+        rendered = f"<em>{rendered}</em>"
+    if text_style.get("underline"):
+        rendered = f"<u>{rendered}</u>"
+    return rendered
+
+
+def _run_to_markdown(text: str, text_style: dict) -> str:
+    rendered = text
+    link = (text_style.get("link") or {}).get("url")
+    if link:
+        rendered = f"[{rendered}]({link})"
+    if text_style.get("underline"):
+        rendered = f"<u>{rendered}</u>"
+    if text_style.get("italic"):
+        rendered = f"*{rendered}*"
+    if text_style.get("bold"):
+        rendered = f"**{rendered}**"
+    return rendered
+
+
+def _document_to_html(document: Document) -> str:
+    resource = _document_resource_for_export(document)
+    parts: list[str] = []
+    in_list = False
+    for element in resource.body.content[1:]:
+        paragraph = element.paragraph
+        if paragraph is None:
+            continue
+        runs = "".join(
+            _run_to_html(
+                run.textRun.content.rstrip("\n"),
+                run.textRun.textStyle.model_dump(exclude_none=True),
+            )
+            for run in paragraph.elements
+        )
+        named_style = paragraph.paragraphStyle.namedStyleType
+        is_bullet = paragraph.bullet is not None
+        if is_bullet and not in_list:
+            parts.append("<ul>")
+            in_list = True
+        if not is_bullet and in_list:
+            parts.append("</ul>")
+            in_list = False
+        if named_style == "HEADING_1":
+            parts.append(f"<h1>{runs}</h1>")
+        elif named_style == "HEADING_2":
+            parts.append(f"<h2>{runs}</h2>")
+        elif named_style == "HEADING_3":
+            parts.append(f"<h3>{runs}</h3>")
+        elif is_bullet:
+            parts.append(f"<li>{runs}</li>")
+        else:
+            parts.append(f"<p>{runs}</p>")
+    if in_list:
+        parts.append("</ul>")
+    return "".join(parts)
+
+
+def _document_to_markdown(document: Document) -> str:
+    resource = _document_resource_for_export(document)
+    lines: list[str] = []
+    for element in resource.body.content[1:]:
+        paragraph = element.paragraph
+        if paragraph is None:
+            continue
+        text = "".join(
+            _run_to_markdown(
+                run.textRun.content.rstrip("\n"),
+                run.textRun.textStyle.model_dump(exclude_none=True),
+            )
+            for run in paragraph.elements
+        )
+        named_style = paragraph.paragraphStyle.namedStyleType
+        if named_style == "HEADING_1":
+            lines.append(f"# {text}")
+        elif named_style == "HEADING_2":
+            lines.append(f"## {text}")
+        elif named_style == "HEADING_3":
+            lines.append(f"### {text}")
+        elif paragraph.bullet is not None:
+            lines.append(f"- {text}")
+        else:
+            lines.append(text)
+    return "\n".join(lines).rstrip() + "\n"
+
+
 def _escape_rtf(text: str) -> str:
     return text.replace("\\", "\\\\").replace("{", "\\{").replace("}", "\\}")
 
@@ -179,6 +304,38 @@ def _document_text_to_docx(text: str) -> bytes:
             document.add_paragraph(line)
     buffer = BytesIO()
     document.save(buffer)
+    return buffer.getvalue()
+
+
+def _document_to_docx(document: Document) -> bytes:
+    resource = _document_resource_for_export(document)
+    docx_document = DocxDocument()
+    for element in resource.body.content[1:]:
+        paragraph = element.paragraph
+        if paragraph is None:
+            continue
+        style_name = None
+        if paragraph.bullet is not None:
+            style_name = "List Bullet"
+        elif paragraph.paragraphStyle.namedStyleType == "HEADING_1":
+            style_name = "Heading 1"
+        elif paragraph.paragraphStyle.namedStyleType == "HEADING_2":
+            style_name = "Heading 2"
+        elif paragraph.paragraphStyle.namedStyleType == "HEADING_3":
+            style_name = "Heading 3"
+        docx_paragraph = docx_document.add_paragraph(style=style_name)
+        for element_run in paragraph.elements:
+            content = element_run.textRun.content.rstrip("\n")
+            run = docx_paragraph.add_run(content)
+            style = element_run.textRun.textStyle
+            if style.bold:
+                run.bold = True
+            if style.italic:
+                run.italic = True
+            if style.underline:
+                run.underline = True
+    buffer = BytesIO()
+    docx_document.save(buffer)
     return buffer.getvalue()
 
 
@@ -245,6 +402,7 @@ def _new_document(
         body_text=body_text,
         text_style_spans_json="[]",
         paragraph_style_json="[]",
+        named_ranges_json="[]",
         named_styles_json=dump_json_field(default_named_styles()),
         document_style_json=dump_json_field(default_document_style()),
         revision_id=generate_revision_id(),
@@ -263,12 +421,8 @@ def list_files(
     db: Session = Depends(get_db),
     actor_user_id: str = Depends(resolve_actor_user_id),
 ):
-    documents = (
-        db.query(Document)
-        .filter(Document.user_id == actor_user_id)
-        .order_by(Document.updated_at.desc(), Document.id.asc())
-        .all()
-    )
+    documents_with_permissions = list_accessible_documents(db, actor_user_id)
+    documents = [document for document, _permission in documents_with_permissions]
     if q:
         documents = [document for document in documents if _match_query(document, q)]
 
@@ -294,11 +448,21 @@ def list_files(
             DriveFileResource.model_validate(
                 {
                     field: value
-                    for field, value in _drive_file_payload(document).items()
+                    for field, value in _drive_file_payload(
+                        document,
+                        owned_by_me=(permission.role == "owner" and permission.user_id == document.user_id),
+                    ).items()
                     if field in file_fields
                 }
             )
             for document in sliced
+            for permission in [
+                next(
+                    perm
+                    for doc, perm in documents_with_permissions
+                    if doc.id == document.id
+                )
+            ]
         ]
     if "nextPageToken" in top_fields and next_page_token is not None:
         payload["nextPageToken"] = next_page_token
@@ -312,7 +476,8 @@ def get_file(
     db: Session = Depends(get_db),
     actor_user_id: str = Depends(resolve_actor_user_id),
 ):
-    return _drive_file_resource(_resolve_document(db, actor_user_id, fileId), fields=fields)
+    document, owned_by_me = _resolve_document(db, actor_user_id, fileId)
+    return _drive_file_resource(document, fields=fields, owned_by_me=owned_by_me)
 
 
 @router.post("/files", response_model=DriveFileResource, response_model_exclude_none=True)
@@ -333,6 +498,9 @@ def create_file(
         description=body.get("description", ""),
     )
     db.add(document)
+    db.flush()
+    ensure_owner_permission(db, document)
+    record_document_change(db, document, change_type="fileCreated")
     db.commit()
     db.refresh(document)
     return _drive_file_resource(document)
@@ -345,7 +513,7 @@ def copy_file(
     db: Session = Depends(get_db),
     actor_user_id: str = Depends(resolve_actor_user_id),
 ):
-    source = _resolve_document(db, actor_user_id, fileId)
+    source, _owned_by_me = _resolve_document(db, actor_user_id, fileId)
     now = datetime.now(timezone.utc)
     clone = Document(
         id=uuid4().hex[:32],
@@ -355,6 +523,7 @@ def copy_file(
         body_text=source.body_text,
         text_style_spans_json=source.text_style_spans_json,
         paragraph_style_json=source.paragraph_style_json,
+        named_ranges_json=source.named_ranges_json,
         named_styles_json=source.named_styles_json,
         document_style_json=source.document_style_json,
         revision_id=generate_revision_id(),
@@ -363,6 +532,9 @@ def copy_file(
         trashed=False,
     )
     db.add(clone)
+    db.flush()
+    ensure_owner_permission(db, clone)
+    record_document_change(db, clone, change_type="fileCreated")
     db.commit()
     db.refresh(clone)
     return _drive_file_resource(clone)
@@ -375,7 +547,7 @@ def update_file(
     db: Session = Depends(get_db),
     actor_user_id: str = Depends(resolve_actor_user_id),
 ):
-    document = _resolve_document(db, actor_user_id, fileId)
+    document, owned_by_me = _resolve_document(db, actor_user_id, fileId, minimum_role="writer")
     if "name" in body:
         document.title = body["name"] or document.title
     if "description" in body:
@@ -384,9 +556,10 @@ def update_file(
         document.trashed = bool(body["trashed"])
     document.updated_at = datetime.now(timezone.utc)
     document.revision_id = generate_revision_id()
+    record_document_change(db, document, change_type="fileUpdated")
     db.commit()
     db.refresh(document)
-    return _drive_file_resource(document)
+    return _drive_file_resource(document, owned_by_me=owned_by_me)
 
 
 @router.delete("/files/{fileId}", status_code=204)
@@ -395,7 +568,18 @@ def delete_file(
     db: Session = Depends(get_db),
     actor_user_id: str = Depends(resolve_actor_user_id),
 ):
-    document = _resolve_document(db, actor_user_id, fileId)
+    document, _owned_by_me = _resolve_document(db, actor_user_id, fileId, minimum_role="owner")
+    record_document_change(db, document, change_type="fileDeleted", removed=True)
+    (
+        db.query(ChangeRecord)
+        .filter(ChangeRecord.file_id == document.id)
+        .update({"document_id": None}, synchronize_session=False)
+    )
+    (
+        db.query(DocumentPermission)
+        .filter(DocumentPermission.document_id == document.id)
+        .delete(synchronize_session=False)
+    )
     db.delete(document)
     db.commit()
     return Response(status_code=204)
@@ -408,17 +592,17 @@ def export_file(
     db: Session = Depends(get_db),
     actor_user_id: str = Depends(resolve_actor_user_id),
 ):
-    document = _resolve_document(db, actor_user_id, fileId)
+    document, _owned_by_me = _resolve_document(db, actor_user_id, fileId)
     if mimeType == "text/plain":
         return Response(content=document.body_text, media_type="text/plain")
     if mimeType == "text/html":
-        return Response(content=_document_text_to_html(document.body_text), media_type="text/html")
+        return Response(content=_document_to_html(document), media_type="text/html")
     if mimeType in _MARKDOWN_MIME_TYPES:
-        return Response(content=_document_text_to_markdown(document.body_text), media_type=mimeType)
+        return Response(content=_document_to_markdown(document), media_type=mimeType)
     if mimeType == "application/rtf":
         return Response(content=_document_text_to_rtf(document.body_text), media_type=mimeType)
     if mimeType == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
-        return Response(content=_document_text_to_docx(document.body_text), media_type=mimeType)
+        return Response(content=_document_to_docx(document), media_type=mimeType)
     if mimeType == "application/pdf":
         return Response(content=_document_text_to_pdf_bytes(document.body_text), media_type=mimeType)
     raise HTTPException(

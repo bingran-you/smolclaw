@@ -26,6 +26,7 @@ class Document(Base):
     body_text: Mapped[str] = mapped_column(Text, default="\n")
     text_style_spans_json: Mapped[str] = mapped_column(Text, default="[]")
     paragraph_style_json: Mapped[str] = mapped_column(Text, default="[]")
+    named_ranges_json: Mapped[str] = mapped_column(Text, default="[]")
     named_styles_json: Mapped[str] = mapped_column(Text, default="{}")
     document_style_json: Mapped[str] = mapped_column(Text, default="{}")
     revision_id: Mapped[str] = mapped_column(String, default=generate_revision_id)
@@ -34,3 +35,8 @@ class Document(Base):
     trashed: Mapped[bool] = mapped_column(Boolean, default=False)
 
     user = relationship("User", back_populates="documents")
+    permissions = relationship(
+        "DocumentPermission",
+        back_populates="document",
+        cascade="all, delete-orphan",
+    )

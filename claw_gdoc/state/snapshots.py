@@ -8,7 +8,7 @@ from pathlib import Path
 
 from sqlalchemy.orm import Session
 
-from claw_gdoc.models import Document, User, get_session_factory
+from claw_gdoc.models import Document, DocumentPermission, User, get_session_factory
 
 SNAPSHOTS_DIR = Path(__file__).resolve().parent.parent.parent / ".data" / "snapshots_gdoc"
 
@@ -28,12 +28,30 @@ def _serialize_documents(db: Session, user_id: str) -> list[dict]:
             "bodyText": doc.body_text,
             "textStyleSpans": doc.text_style_spans_json,
             "paragraphStyles": doc.paragraph_style_json,
+            "namedRanges": doc.named_ranges_json,
             "namedStyles": doc.named_styles_json,
             "documentStyle": doc.document_style_json,
             "revisionId": str(doc.revision_id),
             "createdAt": doc.created_at.isoformat(),
             "updatedAt": doc.updated_at.isoformat(),
             "trashed": doc.trashed,
+            "permissions": [
+                {
+                    "id": permission.id,
+                    "userId": permission.user_id,
+                    "emailAddress": permission.email_address,
+                    "role": permission.role,
+                    "type": permission.permission_type,
+                    "allowFileDiscovery": permission.allow_file_discovery,
+                    "createdAt": permission.created_at.isoformat(),
+                }
+                for permission in (
+                    db.query(DocumentPermission)
+                    .filter(DocumentPermission.document_id == doc.id)
+                    .order_by(DocumentPermission.created_at.asc(), DocumentPermission.id.asc())
+                    .all()
+                )
+            ],
         }
         for doc in documents
     ]
@@ -113,6 +131,7 @@ def _restore_from_state(state: dict):
                         body_text=doc.get("bodyText", "\n"),
                         text_style_spans_json=doc.get("textStyleSpans", "[]"),
                         paragraph_style_json=doc.get("paragraphStyles", "[]"),
+                        named_ranges_json=doc.get("namedRanges", "[]"),
                         named_styles_json=doc.get("namedStyles", "{}"),
                         document_style_json=doc.get("documentStyle", "{}"),
                         revision_id=str(doc.get("revisionId", "")),
@@ -121,6 +140,19 @@ def _restore_from_state(state: dict):
                         trashed=bool(doc.get("trashed", False)),
                     )
                 )
+                for permission in doc.get("permissions", []):
+                    db.add(
+                        DocumentPermission(
+                            id=permission["id"],
+                            document_id=doc["id"],
+                            user_id=permission.get("userId"),
+                            email_address=permission.get("emailAddress", ""),
+                            role=permission.get("role", "reader"),
+                            permission_type=permission.get("type", "user"),
+                            allow_file_discovery=bool(permission.get("allowFileDiscovery", False)),
+                            created_at=datetime.fromisoformat(permission["createdAt"]),
+                        )
+                    )
 
         db.commit()
     finally:
