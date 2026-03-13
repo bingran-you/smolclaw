@@ -1,0 +1,78 @@
+{
+  "endpoints": [
+    {
+      "id": "docs.documents.get",
+      "resource": "Documents",
+      "method": "GET",
+      "path": "/documents/{documentId}",
+      "implemented": true,
+      "fixture": "document_get_response.json",
+      "tests": [
+        "tests/test_gdoc_api.py::TestDocuments::test_get_document",
+        "tests/test_gdoc_conformance.py::TestDocsConformance::test_document_get_shape"
+      ]
+    },
+    {
+      "id": "docs.documents.create",
+      "resource": "Documents",
+      "method": "POST",
+      "path": "/documents",
+      "implemented": true,
+      "fixture": "document_create_response.json",
+      "tests": [
+        "tests/test_gdoc_api.py::TestDocuments::test_create_document",
+        "tests/test_gdoc_conformance.py::TestDocsConformance::test_document_create_shape"
+      ]
+    },
+    {
+      "id": "docs.documents.batchUpdate",
+      "resource": "Documents",
+      "method": "POST",
+      "path": "/documents/{documentId}:batchUpdate",
+      "implemented": true,
+      "fixture": "document_batch_update_response.json",
+      "tests": [
+        "tests/test_gdoc_api.py::TestDocuments::test_insert_text",
+        "tests/test_gdoc_api.py::TestDocuments::test_batch_update_is_atomic",
+        "tests/test_gdoc_conformance.py::TestDocsConformance::test_document_batch_update_shape"
+      ]
+    },
+    {
+      "id": "drive.files.list",
+      "resource": "Files",
+      "method": "GET",
+      "path": "/files",
+      "implemented": true,
+      "fixture": "file_list_docs.json",
+      "tests": [
+        "tests/test_gdoc_api.py::TestDriveBridge::test_list_get_export",
+        "tests/test_gdoc_api.py::TestDriveBridge::test_list_pagination_and_query",
+        "tests/test_gdoc_conformance.py::TestDriveConformance::test_file_list_shape"
+      ]
+    },
+    {
+      "id": "drive.files.get",
+      "resource": "Files",
+      "method": "GET",
+      "path": "/files/{fileId}",
+      "implemented": true,
+      "fixture": "file_get_doc.json",
+      "tests": [
+        "tests/test_gdoc_api.py::TestDriveBridge::test_list_get_export",
+        "tests/test_gdoc_conformance.py::TestDriveConformance::test_file_get_shape"
+      ]
+    },
+    {
+      "id": "drive.files.export",
+      "resource": "Files",
+      "method": "GET",
+      "path": "/files/{fileId}/export",
+      "implemented": true,
+      "fixture": null,
+      "tests": [
+        "tests/test_gdoc_api.py::TestDriveBridge::test_list_get_export",
+        "tests/test_gdoc_api.py::TestDriveBridge::test_invalid_page_token_and_export_mime"
+      ]
+    }
+  ]
+}

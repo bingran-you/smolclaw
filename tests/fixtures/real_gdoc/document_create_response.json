@@ -1,0 +1,50 @@
+{
+  "title": "Shape Test",
+  "documentId": "doc_fixture",
+  "revisionId": "1",
+  "body": {
+    "content": [
+      {
+        "startIndex": 0,
+        "endIndex": 1,
+        "sectionBreak": {
+          "sectionStyle": {}
+        }
+      },
+      {
+        "startIndex": 1,
+        "endIndex": 2,
+        "paragraph": {
+          "elements": [
+            {
+              "startIndex": 1,
+              "endIndex": 2,
+              "textRun": {
+                "content": "\n"
+              }
+            }
+          ],
+          "paragraphStyle": {
+            "namedStyleType": "NORMAL_TEXT"
+          }
+        }
+      }
+    ]
+  },
+  "documentStyle": {
+    "pageSize": {
+      "width": {
+        "magnitude": 612,
+        "unit": "PT"
+      }
+    }
+  },
+  "namedStyles": {
+    "styles": [
+      {
+        "namedStyleType": "NORMAL_TEXT"
+      }
+    ]
+  },
+  "lists": {}
+}
