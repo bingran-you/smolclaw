@@ -9,6 +9,7 @@ from datetime import datetime, timedelta, timezone
 
 from sqlalchemy.orm import Session
 
+from claw_gdoc.api.history_tracker import record_revision_snapshot
 from claw_gdoc.api.render import default_document_style, default_named_styles, dump_json_field
 from claw_gdoc.models import (
     Document,
@@ -84,6 +85,7 @@ def _seed_document(
             created_at=created_at,
         )
     )
+    record_revision_snapshot(db, document, actor_user_id=user.id)
 
 
 def _seed_shared_access(db: Session, users: list[User]) -> None:

@@ -8,9 +8,70 @@ from pathlib import Path
 
 from sqlalchemy.orm import Session
 
-from claw_gdoc.models import Document, DocumentPermission, User, get_session_factory
+from claw_gdoc.api.access import list_accessible_documents
+from claw_gdoc.models import Document, DocumentPermission, DocumentRevision, User, get_session_factory
 
 SNAPSHOTS_DIR = Path(__file__).resolve().parent.parent.parent / ".data" / "snapshots_gdoc"
+
+
+def _serialize_document(db: Session, doc: Document, *, access_role: str | None = None, owned_by_me: bool | None = None) -> dict:
+    payload = {
+        "id": doc.id,
+        "ownerUserId": doc.user_id,
+        "title": doc.title,
+        "description": doc.description,
+        "bodyText": doc.body_text,
+        "textStyleSpans": doc.text_style_spans_json,
+        "paragraphStyles": doc.paragraph_style_json,
+        "namedRanges": doc.named_ranges_json,
+        "namedStyles": doc.named_styles_json,
+        "documentStyle": doc.document_style_json,
+        "revisionId": str(doc.revision_id),
+        "createdAt": doc.created_at.isoformat(),
+        "updatedAt": doc.updated_at.isoformat(),
+        "trashed": doc.trashed,
+        "permissions": [
+            {
+                "id": permission.id,
+                "userId": permission.user_id,
+                "emailAddress": permission.email_address,
+                "role": permission.role,
+                "type": permission.permission_type,
+                "allowFileDiscovery": permission.allow_file_discovery,
+                "createdAt": permission.created_at.isoformat(),
+            }
+            for permission in (
+                db.query(DocumentPermission)
+                .filter(DocumentPermission.document_id == doc.id)
+                .order_by(DocumentPermission.created_at.asc(), DocumentPermission.id.asc())
+                .all()
+            )
+        ],
+        "revisions": [
+            {
+                "id": revision.revision_id,
+                "userId": revision.user_id,
+                "title": revision.title,
+                "description": revision.description,
+                "bodyText": revision.body_text,
+                "fileSize": revision.file_size,
+                "keepForever": revision.keep_forever,
+                "exportLinks": revision.export_links_json,
+                "createdAt": revision.created_at.isoformat(),
+            }
+            for revision in (
+                db.query(DocumentRevision)
+                .filter(DocumentRevision.document_id == doc.id)
+                .order_by(DocumentRevision.created_at.asc(), DocumentRevision.id.asc())
+                .all()
+            )
+        ],
+    }
+    if access_role is not None:
+        payload["accessRole"] = access_role
+    if owned_by_me is not None:
+        payload["ownedByMe"] = owned_by_me
+    return payload
 
 
 def _serialize_documents(db: Session, user_id: str) -> list[dict]:
@@ -20,40 +81,19 @@ def _serialize_documents(db: Session, user_id: str) -> list[dict]:
         .order_by(Document.updated_at.desc(), Document.id.asc())
         .all()
     )
+    return [_serialize_document(db, doc, access_role="owner", owned_by_me=True) for doc in documents]
+
+
+def _serialize_accessible_documents(db: Session, user_id: str) -> list[dict]:
+    accessible = list_accessible_documents(db, user_id)
     return [
-        {
-            "id": doc.id,
-            "title": doc.title,
-            "description": doc.description,
-            "bodyText": doc.body_text,
-            "textStyleSpans": doc.text_style_spans_json,
-            "paragraphStyles": doc.paragraph_style_json,
-            "namedRanges": doc.named_ranges_json,
-            "namedStyles": doc.named_styles_json,
-            "documentStyle": doc.document_style_json,
-            "revisionId": str(doc.revision_id),
-            "createdAt": doc.created_at.isoformat(),
-            "updatedAt": doc.updated_at.isoformat(),
-            "trashed": doc.trashed,
-            "permissions": [
-                {
-                    "id": permission.id,
-                    "userId": permission.user_id,
-                    "emailAddress": permission.email_address,
-                    "role": permission.role,
-                    "type": permission.permission_type,
-                    "allowFileDiscovery": permission.allow_file_discovery,
-                    "createdAt": permission.created_at.isoformat(),
-                }
-                for permission in (
-                    db.query(DocumentPermission)
-                    .filter(DocumentPermission.document_id == doc.id)
-                    .order_by(DocumentPermission.created_at.asc(), DocumentPermission.id.asc())
-                    .all()
-                )
-            ],
-        }
-        for doc in documents
+        _serialize_document(
+            db,
+            doc,
+            access_role=permission.role,
+            owned_by_me=(permission.role == "owner" and permission.user_id == doc.user_id),
+        )
+        for doc, permission in accessible
     ]
 
 
@@ -66,6 +106,7 @@ def _serialize_user(db: Session, user: User) -> dict:
             "historyId": user.history_id,
         },
         "documents": _serialize_documents(db, user.id),
+        "accessibleDocuments": _serialize_accessible_documents(db, user.id),
     }
 
 
@@ -153,6 +194,21 @@ def _restore_from_state(state: dict):
                             created_at=datetime.fromisoformat(permission["createdAt"]),
                         )
                     )
+                for revision in doc.get("revisions", []):
+                    db.add(
+                        DocumentRevision(
+                            revision_id=revision["id"],
+                            document_id=doc["id"],
+                            user_id=revision.get("userId", user_id),
+                            title=revision.get("title", doc.get("title", "")),
+                            description=revision.get("description", doc.get("description", "")),
+                            body_text=revision.get("bodyText", doc.get("bodyText", "\n")),
+                            file_size=int(revision.get("fileSize", 0)),
+                            keep_forever=bool(revision.get("keepForever", False)),
+                            export_links_json=revision.get("exportLinks", "{}"),
+                            created_at=datetime.fromisoformat(revision["createdAt"]),
+                        )
+                    )
 
         db.commit()
     finally:
@@ -199,7 +255,11 @@ def get_diff() -> dict:
             "documents": _diff_items(
                 init_user.get("documents", []),
                 curr_user.get("documents", []),
-            )
+            ),
+            "accessibleDocuments": _diff_items(
+                init_user.get("accessibleDocuments", []),
+                curr_user.get("accessibleDocuments", []),
+            ),
         }
 
     return diff

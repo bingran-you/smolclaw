@@ -20,6 +20,7 @@ class ResolvedPermission:
     email_address: str
     role: str
     permission_type: str = "user"
+    domain: str | None = None
     allow_file_discovery: bool = False
 
 
@@ -57,6 +58,7 @@ def list_document_permissions(db: Session, document: Document) -> list[ResolvedP
             email_address=permission.email_address,
             role=normalize_role(permission.role),
             permission_type=permission.permission_type,
+            domain=permission.email_address if permission.permission_type == "domain" else None,
             allow_file_discovery=permission.allow_file_discovery,
         )
         for permission in (
@@ -86,6 +88,12 @@ def resolve_document_permission(
 
     for permission in list_document_permissions(db, document):
         if permission.email_address == actor.email_address:
+            return permission
+        if permission.permission_type == "domain":
+            actor_domain = actor.email_address.rsplit("@", 1)[-1].lower()
+            if actor_domain == permission.email_address.lower():
+                return permission
+        if permission.permission_type == "anyone":
             return permission
     return None
 

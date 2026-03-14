@@ -12,6 +12,7 @@ from claw_gdoc.models import Document, DocumentPermission, User
 from .access import list_document_permissions, normalize_role, require_document_access
 from .deps import get_db, resolve_actor_user_id
 from .history_tracker import ensure_owner_permission, record_document_change
+from .drive import _drive_file_payload
 from .schemas import (
     DrivePermissionCreateRequest,
     DrivePermissionList,
@@ -20,6 +21,20 @@ from .schemas import (
 )
 
 router = APIRouter()
+
+
+def _permission_target_value(body: DrivePermissionCreateRequest) -> str:
+    if body.type == "user":
+        if not body.emailAddress:
+            raise HTTPException(400, {"message": "emailAddress is required for user permissions", "reason": "badRequest"})
+        return body.emailAddress
+    if body.type == "domain":
+        if not body.domain:
+            raise HTTPException(400, {"message": "domain is required for domain permissions", "reason": "badRequest"})
+        return body.domain
+    if body.type == "anyone":
+        return ""
+    raise HTTPException(400, {"message": f"Unsupported permission type: {body.type}", "reason": "badRequest"})
 
 
 def _permission_to_resource(db: Session, permission) -> DrivePermissionResource:
@@ -34,7 +49,8 @@ def _permission_to_resource(db: Session, permission) -> DrivePermissionResource:
         id=permission_id,
         type=permission_type,
         role=permission.role,
-        emailAddress=email_address,
+        emailAddress=email_address if permission_type == "user" else None,
+        domain=email_address if permission_type == "domain" else None,
         displayName=user.display_name if user else None,
         allowFileDiscovery=allow_file_discovery,
     )
@@ -108,19 +124,18 @@ def create_permission(
     actor_user_id: str = Depends(resolve_actor_user_id),
 ):
     document = _load_document(db, actor_user_id, fileId, minimum_role="owner")
-    if body.type != "user":
-        raise HTTPException(400, {"message": f"Unsupported permission type: {body.type}", "reason": "badRequest"})
-
     role = normalize_role(body.role)
     if role == "owner":
         raise HTTPException(400, {"message": "Owner transfers are not supported", "reason": "badRequest"})
 
-    user = db.query(User).filter(User.email_address == body.emailAddress).first()
+    target_value = _permission_target_value(body)
+    user = db.query(User).filter(User.email_address == body.emailAddress).first() if body.emailAddress else None
     existing = (
         db.query(DocumentPermission)
         .filter(
             DocumentPermission.document_id == document.id,
-            DocumentPermission.email_address == body.emailAddress,
+            DocumentPermission.permission_type == body.type,
+            DocumentPermission.email_address == target_value,
         )
         .first()
     )
@@ -131,7 +146,7 @@ def create_permission(
         id=f"perm_{uuid4().hex[:24]}",
         document_id=document.id,
         user_id=user.id if user else None,
-        email_address=body.emailAddress,
+        email_address=target_value,
         role=role,
         permission_type=body.type,
         allow_file_discovery=body.allowFileDiscovery,
@@ -149,17 +164,13 @@ def create_permission(
     return _permission_to_resource(db, permission)
 
 
-@router.patch(
-    "/files/{fileId}/permissions/{permissionId}",
-    response_model=DrivePermissionResource,
-    response_model_exclude_none=True,
-)
-def update_permission(
+def _update_permission_common(
+    *,
     fileId: str,
     permissionId: str,
     body: DrivePermissionUpdateRequest,
-    db: Session = Depends(get_db),
-    actor_user_id: str = Depends(resolve_actor_user_id),
+    db: Session,
+    actor_user_id: str,
 ):
     document = _load_document(db, actor_user_id, fileId, minimum_role="owner")
     if permissionId == f"owner-{document.id}":
@@ -180,6 +191,48 @@ def update_permission(
     db.commit()
     db.refresh(permission)
     return _permission_to_resource(db, permission)
+
+
+@router.patch(
+    "/files/{fileId}/permissions/{permissionId}",
+    response_model=DrivePermissionResource,
+    response_model_exclude_none=True,
+)
+def update_permission(
+    fileId: str,
+    permissionId: str,
+    body: DrivePermissionUpdateRequest,
+    db: Session = Depends(get_db),
+    actor_user_id: str = Depends(resolve_actor_user_id),
+):
+    return _update_permission_common(
+        fileId=fileId,
+        permissionId=permissionId,
+        body=body,
+        db=db,
+        actor_user_id=actor_user_id,
+    )
+
+
+@router.put(
+    "/files/{fileId}/permissions/{permissionId}",
+    response_model=DrivePermissionResource,
+    response_model_exclude_none=True,
+)
+def replace_permission(
+    fileId: str,
+    permissionId: str,
+    body: DrivePermissionUpdateRequest,
+    db: Session = Depends(get_db),
+    actor_user_id: str = Depends(resolve_actor_user_id),
+):
+    return _update_permission_common(
+        fileId=fileId,
+        permissionId=permissionId,
+        body=body,
+        db=db,
+        actor_user_id=actor_user_id,
+    )
 
 
 @router.delete("/files/{fileId}/permissions/{permissionId}", status_code=204)
@@ -204,6 +257,7 @@ def delete_permission(
         document,
         change_type="permissionChanged",
         removed_user_ids=[removed_user_id] if removed_user_id else None,
+        removed_file_payload=_drive_file_payload(document, owned_by_me=False),
     )
     db.commit()
     return None

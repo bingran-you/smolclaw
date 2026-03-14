@@ -111,6 +111,20 @@ class TestHealthProfileAdmin:
         tasks = resp.json()["tasks"]
         assert any(task["name"] == "cap-docs-01" for task in tasks)
 
+    def test_admin_state_includes_revisions(self, gdoc_client):
+        document_id = _first_document_id(gdoc_client)
+        update = gdoc_client.post(
+            f"/v1/documents/{document_id}:batchUpdate",
+            json={"requests": [{"insertText": {"location": {"index": 1}, "text": "Rev "}}]},
+        )
+        assert update.status_code == 200
+
+        state = gdoc_client.get("/_admin/state")
+        assert state.status_code == 200
+        documents = state.json()["users"]["user1"]["documents"]
+        document = next(doc for doc in documents if doc["id"] == document_id)
+        assert len(document["revisions"]) >= 2
+
 
 class TestDocuments:
     def test_get_document(self, gdoc_client):
@@ -408,6 +422,26 @@ class TestDriveBridge:
         names = [file["name"] for file in search.json()["files"]]
         assert "Launch Checklist" in names
 
+        full_text = gdoc_client.get("/drive/v3/files", params={"q": "fullText contains 'design partners'"})
+        assert full_text.status_code == 200
+        assert any(file["name"] == "Agent Runbooks PRD" for file in full_text.json()["files"])
+
+    def test_list_ordering_and_extended_fields(self, gdoc_client):
+        resp = gdoc_client.get(
+            "/drive/v3/files",
+            params={
+                "orderBy": "name",
+                "fields": "kind,files(id,name,shared,version,headRevisionId,size,owners,lastModifyingUser),nextPageToken",
+            },
+        )
+        assert resp.status_code == 200
+        files = resp.json()["files"]
+        assert files == sorted(files, key=lambda item: item["name"].lower())
+        assert files[0]["version"]
+        assert files[0]["headRevisionId"]
+        assert files[0]["size"]
+        assert files[0]["owners"][0]["emailAddress"].endswith("@nexusai.com")
+
     def test_invalid_page_token_and_export_mime(self, gdoc_client):
         bad_page = gdoc_client.get("/drive/v3/files", params={"pageToken": "oops"})
         assert bad_page.status_code == 400
@@ -499,6 +533,47 @@ class TestDriveBridge:
         assert [change["changeType"] for change in payload["changes"]] == ["fileCreated", "fileUpdated"]
         assert payload["changes"][0]["fileId"] == file_id
         assert payload["newStartPageToken"]
+
+    def test_revision_lifecycle_and_watch_endpoints(self, gdoc_client):
+        create = gdoc_client.post("/drive/v3/files", json={"name": "Revision Notes"})
+        assert create.status_code == 200
+        file_id = create.json()["id"]
+
+        update = gdoc_client.patch(
+            f"/drive/v3/files/{file_id}",
+            json={"description": "v2"},
+        )
+        assert update.status_code == 200
+        head_revision_id = update.json()["headRevisionId"]
+
+        revisions = gdoc_client.get(f"/drive/v3/files/{file_id}/revisions")
+        assert revisions.status_code == 200
+        payload = revisions.json()
+        assert len(payload["revisions"]) == 2
+        assert payload["revisions"][0]["id"] == head_revision_id
+
+        revision = gdoc_client.get(f"/drive/v3/files/{file_id}/revisions/{head_revision_id}")
+        assert revision.status_code == 200
+        assert revision.json()["originalFilename"] == "Revision Notes.gdoc"
+
+        watch = gdoc_client.post(
+            f"/drive/v3/files/{file_id}/watch",
+            json={"id": "file-watch-1", "type": "web_hook", "address": "https://example.com/hooks/files"},
+        )
+        assert watch.status_code == 200
+        resource_id = watch.json()["resourceId"]
+
+        changes_watch = gdoc_client.post(
+            "/drive/v3/changes/watch",
+            json={"id": "changes-watch-1", "type": "web_hook", "address": "https://example.com/hooks/changes"},
+        )
+        assert changes_watch.status_code == 200
+
+        stop = gdoc_client.post(
+            "/drive/v3/channels/stop",
+            json={"id": "file-watch-1", "resourceId": resource_id},
+        )
+        assert stop.status_code == 204
 
 
 class TestSharingAndPermissions:
@@ -604,3 +679,36 @@ class TestSharingAndPermissions:
         assert payload["changes"][0]["changeType"] == "permissionChanged"
         assert payload["changes"][0]["fileId"] == file_id
         assert payload["changes"][0]["file"]["ownedByMe"] is False
+
+    def test_domain_permissions_and_accessible_documents_diff(self, gdoc_multi_client):
+        create = gdoc_multi_client.post(
+            "/drive/v3/files",
+            headers=_headers("user1"),
+            json={"name": "Domain Shared Doc"},
+        )
+        assert create.status_code == 200
+        file_id = create.json()["id"]
+
+        share = gdoc_multi_client.post(
+            f"/drive/v3/files/{file_id}/permissions",
+            headers=_headers("user1"),
+            json={"type": "domain", "domain": "nexusai.com", "role": "reader", "allowFileDiscovery": True},
+        )
+        assert share.status_code == 200
+        assert share.json()["domain"] == "nexusai.com"
+
+        listing = gdoc_multi_client.get("/drive/v3/files", headers=_headers("user2"), params={"q": "sharedWithMe"})
+        assert listing.status_code == 200
+        assert any(file["id"] == file_id for file in listing.json()["files"])
+
+        state = gdoc_multi_client.get("/_admin/state")
+        assert state.status_code == 200
+        accessible = state.json()["users"]["user2"]["accessibleDocuments"]
+        entry = next(doc for doc in accessible if doc["id"] == file_id)
+        assert entry["accessRole"] == "reader"
+        assert entry["ownedByMe"] is False
+
+        diff = gdoc_multi_client.get("/_admin/diff")
+        assert diff.status_code == 200
+        added = diff.json()["users"]["user2"]["accessibleDocuments"]["added"]
+        assert any(doc["id"] == file_id for doc in added)

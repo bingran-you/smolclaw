@@ -84,3 +84,20 @@ class TestDriveConformance:
         ).json()
         assert set(real.keys()) == set(mock.keys())
         _assert_shape(real, mock)
+
+    def test_revision_list_shape(self, gdoc_client):
+        real = load_fixture(GDRIVE_FIXTURES, "revision_list_doc.json")
+        file_id = _first_document_id(gdoc_client)
+        gdoc_client.patch(f"/drive/v3/files/{file_id}", json={"description": "revision shape"})
+        mock = gdoc_client.get(f"/drive/v3/files/{file_id}/revisions").json()
+        assert set(real.keys()) == set(mock.keys())
+        _assert_shape(real, mock)
+
+    def test_revision_get_shape(self, gdoc_client):
+        real = load_fixture(GDRIVE_FIXTURES, "revision_get_doc.json")
+        file_id = _first_document_id(gdoc_client)
+        update = gdoc_client.patch(f"/drive/v3/files/{file_id}", json={"description": "revision get shape"})
+        revision_id = update.json()["headRevisionId"]
+        mock = gdoc_client.get(f"/drive/v3/files/{file_id}/revisions/{revision_id}").json()
+        assert set(real.keys()) == set(mock.keys())
+        _assert_shape(real, mock)

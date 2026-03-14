@@ -12,7 +12,7 @@ from claw_gdoc.models import Document, User, generate_revision_id
 
 from .access import require_document_access
 from .deps import get_db, resolve_actor_user_id
-from .history_tracker import ensure_owner_permission, record_document_change
+from .history_tracker import ensure_owner_permission, record_document_change, record_revision_snapshot
 from .render import (
     apply_batch_requests,
     default_document_style,
@@ -114,6 +114,7 @@ def create_document(
     db.add(document)
     db.flush()
     ensure_owner_permission(db, document)
+    record_revision_snapshot(db, document, actor_user_id=actor_user_id)
     record_document_change(db, document, change_type="fileCreated")
     db.commit()
     db.refresh(document)
@@ -166,6 +167,7 @@ def batch_update_document(
     document.document_style_json = next_document_style_json
     document.revision_id = generate_revision_id()
     document.updated_at = datetime.now(timezone.utc)
+    record_revision_snapshot(db, document, actor_user_id=actor_user_id)
     record_document_change(db, document, change_type="fileUpdated")
 
     db.commit()

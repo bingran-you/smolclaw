@@ -40,3 +40,8 @@ class Document(Base):
         back_populates="document",
         cascade="all, delete-orphan",
     )
+    revisions = relationship(
+        "DocumentRevision",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )

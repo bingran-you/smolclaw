@@ -120,6 +120,41 @@
       ]
     },
     {
+      "id": "drive.files.watch",
+      "resource": "Files",
+      "method": "POST",
+      "path": "/files/{fileId}/watch",
+      "implemented": true,
+      "fixture": null,
+      "tests": [
+        "tests/test_gdoc_api.py::TestDriveBridge::test_revision_lifecycle_and_watch_endpoints"
+      ]
+    },
+    {
+      "id": "drive.revisions.list",
+      "resource": "Revisions",
+      "method": "GET",
+      "path": "/files/{fileId}/revisions",
+      "implemented": true,
+      "fixture": "revision_list_doc.json",
+      "tests": [
+        "tests/test_gdoc_api.py::TestDriveBridge::test_revision_lifecycle_and_watch_endpoints",
+        "tests/test_gdoc_conformance.py::TestDriveConformance::test_revision_list_shape"
+      ]
+    },
+    {
+      "id": "drive.revisions.get",
+      "resource": "Revisions",
+      "method": "GET",
+      "path": "/files/{fileId}/revisions/{revisionId}",
+      "implemented": true,
+      "fixture": "revision_get_doc.json",
+      "tests": [
+        "tests/test_gdoc_api.py::TestDriveBridge::test_revision_lifecycle_and_watch_endpoints",
+        "tests/test_gdoc_conformance.py::TestDriveConformance::test_revision_get_shape"
+      ]
+    },
+    {
       "id": "drive.permissions.list",
       "resource": "Permissions",
       "method": "GET",
@@ -197,6 +232,28 @@
       "tests": [
         "tests/test_gdoc_api.py::TestDriveBridge::test_changes_feed_tracks_document_lifecycle",
         "tests/test_gdoc_api.py::TestSharingAndPermissions::test_changes_feed_includes_permission_changes_for_collaborator"
+      ]
+    },
+    {
+      "id": "drive.changes.watch",
+      "resource": "Changes",
+      "method": "POST",
+      "path": "/changes/watch",
+      "implemented": true,
+      "fixture": null,
+      "tests": [
+        "tests/test_gdoc_api.py::TestDriveBridge::test_revision_lifecycle_and_watch_endpoints"
+      ]
+    },
+    {
+      "id": "drive.channels.stop",
+      "resource": "Channels",
+      "method": "POST",
+      "path": "/channels/stop",
+      "implemented": true,
+      "fixture": null,
+      "tests": [
+        "tests/test_gdoc_api.py::TestDriveBridge::test_revision_lifecycle_and_watch_endpoints"
       ]
     }
   ]
