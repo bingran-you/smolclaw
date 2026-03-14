@@ -44,6 +44,7 @@ if HAS_GYM:
             "documents_get": ("GET", "/v1/documents/{documentId}"),
             "documents_create": ("POST", "/v1/documents"),
             "documents_batch_update": ("POST", "/v1/documents/{documentId}:batchUpdate"),
+            "profile_get": ("GET", "/v1/users/me/profile"),
             "drive_files_list": ("GET", "/drive/v3/files"),
             "drive_files_create": ("POST", "/drive/v3/files"),
             "drive_files_get": ("GET", "/drive/v3/files/{fileId}"),
@@ -51,6 +52,18 @@ if HAS_GYM:
             "drive_files_update": ("PATCH", "/drive/v3/files/{fileId}"),
             "drive_files_delete": ("DELETE", "/drive/v3/files/{fileId}"),
             "drive_files_export": ("GET", "/drive/v3/files/{fileId}/export"),
+            "drive_files_watch": ("POST", "/drive/v3/files/{fileId}/watch"),
+            "drive_permissions_list": ("GET", "/drive/v3/files/{fileId}/permissions"),
+            "drive_permissions_get": ("GET", "/drive/v3/files/{fileId}/permissions/{permissionId}"),
+            "drive_permissions_create": ("POST", "/drive/v3/files/{fileId}/permissions"),
+            "drive_permissions_update": ("PATCH", "/drive/v3/files/{fileId}/permissions/{permissionId}"),
+            "drive_permissions_delete": ("DELETE", "/drive/v3/files/{fileId}/permissions/{permissionId}"),
+            "drive_revisions_list": ("GET", "/drive/v3/files/{fileId}/revisions"),
+            "drive_revisions_get": ("GET", "/drive/v3/files/{fileId}/revisions/{revisionId}"),
+            "drive_changes_start_page_token": ("GET", "/drive/v3/changes/startPageToken"),
+            "drive_changes_list": ("GET", "/drive/v3/changes"),
+            "drive_changes_watch": ("POST", "/drive/v3/changes/watch"),
+            "drive_channels_stop": ("POST", "/drive/v3/channels/stop"),
         }
 
         def __init__(
@@ -176,7 +189,7 @@ if HAS_GYM:
 
             method, path_template = self.TOOLS[tool_name]
             path = path_template
-            for key in ["documentId", "fileId"]:
+            for key in ["documentId", "fileId", "permissionId", "revisionId"]:
                 token = "{" + key + "}"
                 if token in path:
                     value = args.pop(key, None)
@@ -212,6 +225,9 @@ if HAS_GYM:
                 "drive_files_copy",
                 "drive_files_update",
                 "drive_files_delete",
+                "drive_permissions_create",
+                "drive_permissions_update",
+                "drive_permissions_delete",
             }
 
         def _wait_for_server(self, timeout: float = 10.0):

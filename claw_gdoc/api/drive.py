@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 from datetime import datetime, timezone
 from html import escape
@@ -12,20 +13,25 @@ from docx import Document as DocxDocument
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy.orm import Session
 
-from claw_gdoc.models import ChangeRecord, Document, DocumentPermission, generate_revision_id
+from claw_gdoc.models import ChangeRecord, Document, DocumentPermission, DocumentRevision, User, generate_revision_id
 
 from .access import list_accessible_documents, require_document_access
 from .deps import get_db, resolve_actor_user_id
-from .history_tracker import ensure_owner_permission, record_document_change
+from .history_tracker import ensure_owner_permission, record_document_change, record_revision_snapshot
 from .render import default_document_style, default_named_styles, dump_json_field, render_document_resource
-from .schemas import DriveFileList, DriveFileResource
+from .schemas import ChannelRequest, ChannelResource, DriveFileList, DriveFileResource, DriveRevisionList, DriveRevisionResource
+from claw_gdoc.state.channels import channel_registry
 
 router = APIRouter()
 
 GOOGLE_DOCS_MIME_TYPE = "application/vnd.google-apps.document"
 _QUERY_CONTAINS_RE = re.compile(r"name\s+contains\s+'([^']+)'", re.IGNORECASE)
+_QUERY_FULLTEXT_RE = re.compile(r"fullText\s+contains\s+'([^']+)'", re.IGNORECASE)
+_QUERY_NAME_EQUALS_RE = re.compile(r"name\s*=\s*'([^']+)'", re.IGNORECASE)
 _QUERY_EQUALS_RE = re.compile(r"mimeType\s*=\s*'([^']+)'", re.IGNORECASE)
 _QUERY_TRASHED_RE = re.compile(r"trashed\s*=\s*(true|false)", re.IGNORECASE)
+_QUERY_ME_OWNERS_RE = re.compile(r"'me'\s+in\s+owners", re.IGNORECASE)
+_QUERY_SHARED_WITH_ME_RE = re.compile(r"sharedWithMe", re.IGNORECASE)
 _LIST_FIELDS_RE = re.compile(r"files\(([^)]*)\)")
 _MARKDOWN_MIME_TYPES = {"text/markdown", "text/x-markdown"}
 
@@ -49,7 +55,24 @@ def _export_links(document_id: str) -> dict[str, str]:
     }
 
 
+def _user_resource(user: User | None) -> dict[str, object] | None:
+    if user is None:
+        return None
+    return {
+        "displayName": user.display_name,
+        "emailAddress": user.email_address,
+        "kind": "drive#user",
+        "me": False,
+        "permissionId": user.id,
+    }
+
+
 def _drive_file_payload(document: Document, *, owned_by_me: bool = True) -> dict[str, object]:
+    owner_resource = _user_resource(document.user)
+    shared = any(
+        permission.role != "owner" or permission.user_id != document.user_id
+        for permission in document.permissions
+    )
     return {
         "kind": "drive#file",
         "id": document.id,
@@ -63,18 +86,33 @@ def _drive_file_payload(document: Document, *, owned_by_me: bool = True) -> dict
         "webViewLink": f"https://docs.google.com/document/d/{document.id}/edit?usp=drivesdk",
         "iconLink": "https://drive-thirdparty.googleusercontent.com/16/type/application/vnd.google-apps.document",
         "exportLinks": _export_links(document.id),
+        "shared": shared,
+        "version": str(max(1, len(document.revisions))),
+        "headRevisionId": str(document.revision_id),
+        "size": str(len(document.body_text.encode("utf-8"))),
+        "owners": [owner_resource] if owner_resource else None,
+        "lastModifyingUser": owner_resource,
     }
 
 
 def _requested_get_fields(fields: str | None) -> set[str]:
     if not fields:
-        return {"kind", "id", "name", "mimeType", "ownedByMe"}
+        return {"kind", "id", "name", "mimeType", "ownedByMe", "headRevisionId", "version", "shared"}
     return {field.strip() for field in fields.split(",") if field.strip()}
 
 
 def _requested_list_fields(fields: str | None) -> tuple[set[str], set[str]]:
     if not fields:
-        return {"kind", "files", "nextPageToken"}, {"kind", "id", "name", "mimeType", "ownedByMe"}
+        return {"kind", "files", "nextPageToken"}, {
+            "kind",
+            "id",
+            "name",
+            "mimeType",
+            "ownedByMe",
+            "headRevisionId",
+            "version",
+            "shared",
+        }
     top_fields = {
         field.strip()
         for field in _LIST_FIELDS_RE.sub("", fields).split(",")
@@ -99,6 +137,19 @@ def _drive_file_resource(
     return DriveFileResource.model_validate(selected)
 
 
+def _revision_resource(revision: DocumentRevision, *, user: User | None = None) -> DriveRevisionResource:
+    export_links = json.loads(revision.export_links_json) if revision.export_links_json else _export_links(revision.document_id)
+    return DriveRevisionResource(
+        id=revision.revision_id,
+        modifiedTime=_iso_z(revision.created_at),
+        keepForever=revision.keep_forever,
+        size=str(revision.file_size),
+        exportLinks=export_links,
+        lastModifyingUser=_user_resource(user),
+        originalFilename=f"{revision.title or 'Untitled document'}.gdoc",
+    )
+
+
 def _resolve_document(
     db: Session,
     actor_user_id: str,
@@ -118,20 +169,28 @@ def _resolve_document(
     return document, owned_by_me
 
 
-def _match_query(document: Document, query: str) -> bool:
+def _match_query(document: Document, query: str, *, owned_by_me: bool) -> bool:
     query = query.strip()
     if not query:
         return True
     lowered = query.lower()
     if "and" in lowered:
         return all(
-            _match_query(document, part.strip())
+            _match_query(document, part.strip(), owned_by_me=owned_by_me)
             for part in re.split(r"\band\b", query, flags=re.IGNORECASE)
         )
 
     contains_match = _QUERY_CONTAINS_RE.search(query)
     if contains_match:
         return contains_match.group(1).lower() in document.title.lower()
+
+    fulltext_match = _QUERY_FULLTEXT_RE.search(query)
+    if fulltext_match:
+        return fulltext_match.group(1).lower() in document.body_text.lower()
+
+    name_equals_match = _QUERY_NAME_EQUALS_RE.fullmatch(query)
+    if name_equals_match:
+        return document.title == name_equals_match.group(1)
 
     mime_match = _QUERY_EQUALS_RE.fullmatch(query)
     if mime_match:
@@ -141,7 +200,44 @@ def _match_query(document: Document, query: str) -> bool:
     if trashed_match:
         return document.trashed is (trashed_match.group(1).lower() == "true")
 
+    if _QUERY_ME_OWNERS_RE.fullmatch(query):
+        return owned_by_me
+
+    if _QUERY_SHARED_WITH_ME_RE.fullmatch(query):
+        return not owned_by_me
+
     return query.lower() in document.title.lower()
+
+
+def _sort_documents(
+    documents_with_permissions: list[tuple[Document, object]],
+    order_by: str | None,
+) -> list[tuple[Document, object]]:
+    if not order_by:
+        return sorted(
+            documents_with_permissions,
+            key=lambda item: (item[0].updated_at, item[0].id),
+            reverse=True,
+        )
+
+    order_terms = [term.strip() for term in order_by.split(",") if term.strip()]
+    ordered = list(documents_with_permissions)
+    for term in reversed(order_terms):
+        descending = term.endswith(" desc")
+        key_name = term[:-5] if descending else term
+        key_name = key_name.replace(" asc", "").strip()
+        if key_name == "name":
+            key_fn = lambda item: item[0].title.lower()
+        elif key_name in {"modifiedTime", "modifiedDate"}:
+            key_fn = lambda item: item[0].updated_at
+        elif key_name == "createdTime":
+            key_fn = lambda item: item[0].created_at
+        elif key_name == "name_natural":
+            key_fn = lambda item: item[0].title
+        else:
+            continue
+        ordered.sort(key=key_fn, reverse=descending)
+    return ordered
 
 
 def _document_text_to_html(text: str) -> str:
@@ -416,15 +512,24 @@ def _new_document(
 def list_files(
     q: str | None = Query(None),
     fields: str | None = Query(None),
+    orderBy: str | None = Query(None),
     pageSize: int = Query(100, ge=1, le=1000),
     pageToken: str | None = Query(None),
     db: Session = Depends(get_db),
     actor_user_id: str = Depends(resolve_actor_user_id),
 ):
     documents_with_permissions = list_accessible_documents(db, actor_user_id)
-    documents = [document for document, _permission in documents_with_permissions]
     if q:
-        documents = [document for document in documents if _match_query(document, q)]
+        documents_with_permissions = [
+            (document, permission)
+            for document, permission in documents_with_permissions
+            if _match_query(
+                document,
+                q,
+                owned_by_me=(permission.role == "owner" and permission.user_id == document.user_id),
+            )
+        ]
+    documents_with_permissions = _sort_documents(documents_with_permissions, orderBy)
 
     offset = 0
     if pageToken:
@@ -436,8 +541,8 @@ def list_files(
                 {"message": "Invalid pageToken", "reason": "badRequest"},
             ) from exc
 
-    sliced = documents[offset : offset + pageSize]
-    next_page_token = str(offset + pageSize) if offset + pageSize < len(documents) else None
+    sliced = documents_with_permissions[offset : offset + pageSize]
+    next_page_token = str(offset + pageSize) if offset + pageSize < len(documents_with_permissions) else None
     top_fields, file_fields = _requested_list_fields(fields)
 
     payload: dict[str, object] = {}
@@ -455,14 +560,7 @@ def list_files(
                     if field in file_fields
                 }
             )
-            for document in sliced
-            for permission in [
-                next(
-                    perm
-                    for doc, perm in documents_with_permissions
-                    if doc.id == document.id
-                )
-            ]
+            for document, permission in sliced
         ]
     if "nextPageToken" in top_fields and next_page_token is not None:
         payload["nextPageToken"] = next_page_token
@@ -500,6 +598,7 @@ def create_file(
     db.add(document)
     db.flush()
     ensure_owner_permission(db, document)
+    record_revision_snapshot(db, document, actor_user_id=actor_user_id)
     record_document_change(db, document, change_type="fileCreated")
     db.commit()
     db.refresh(document)
@@ -534,18 +633,19 @@ def copy_file(
     db.add(clone)
     db.flush()
     ensure_owner_permission(db, clone)
+    record_revision_snapshot(db, clone, actor_user_id=actor_user_id)
     record_document_change(db, clone, change_type="fileCreated")
     db.commit()
     db.refresh(clone)
     return _drive_file_resource(clone)
 
 
-@router.patch("/files/{fileId}", response_model=DriveFileResource, response_model_exclude_none=True)
-def update_file(
+def _update_file_common(
+    *,
     fileId: str,
     body: dict,
-    db: Session = Depends(get_db),
-    actor_user_id: str = Depends(resolve_actor_user_id),
+    db: Session,
+    actor_user_id: str,
 ):
     document, owned_by_me = _resolve_document(db, actor_user_id, fileId, minimum_role="writer")
     if "name" in body:
@@ -556,10 +656,41 @@ def update_file(
         document.trashed = bool(body["trashed"])
     document.updated_at = datetime.now(timezone.utc)
     document.revision_id = generate_revision_id()
+    record_revision_snapshot(db, document, actor_user_id=actor_user_id)
     record_document_change(db, document, change_type="fileUpdated")
     db.commit()
     db.refresh(document)
     return _drive_file_resource(document, owned_by_me=owned_by_me)
+
+
+@router.patch("/files/{fileId}", response_model=DriveFileResource, response_model_exclude_none=True)
+def update_file(
+    fileId: str,
+    body: dict,
+    db: Session = Depends(get_db),
+    actor_user_id: str = Depends(resolve_actor_user_id),
+):
+    return _update_file_common(
+        fileId=fileId,
+        body=body,
+        db=db,
+        actor_user_id=actor_user_id,
+    )
+
+
+@router.put("/files/{fileId}", response_model=DriveFileResource, response_model_exclude_none=True)
+def replace_file(
+    fileId: str,
+    body: dict,
+    db: Session = Depends(get_db),
+    actor_user_id: str = Depends(resolve_actor_user_id),
+):
+    return _update_file_common(
+        fileId=fileId,
+        body=body,
+        db=db,
+        actor_user_id=actor_user_id,
+    )
 
 
 @router.delete("/files/{fileId}", status_code=204)
@@ -569,20 +700,79 @@ def delete_file(
     actor_user_id: str = Depends(resolve_actor_user_id),
 ):
     document, _owned_by_me = _resolve_document(db, actor_user_id, fileId, minimum_role="owner")
-    record_document_change(db, document, change_type="fileDeleted", removed=True)
+    record_document_change(
+        db,
+        document,
+        change_type="fileDeleted",
+        removed=True,
+        removed_file_payload=_drive_file_payload(document, owned_by_me=True),
+    )
     (
         db.query(ChangeRecord)
         .filter(ChangeRecord.file_id == document.id)
         .update({"document_id": None}, synchronize_session=False)
     )
-    (
-        db.query(DocumentPermission)
-        .filter(DocumentPermission.document_id == document.id)
-        .delete(synchronize_session=False)
-    )
     db.delete(document)
     db.commit()
     return Response(status_code=204)
+
+
+@router.get("/files/{fileId}/revisions", response_model=DriveRevisionList, response_model_exclude_none=True)
+def list_revisions(
+    fileId: str,
+    pageSize: int = Query(100, ge=1, le=1000),
+    pageToken: str | None = Query(None),
+    db: Session = Depends(get_db),
+    actor_user_id: str = Depends(resolve_actor_user_id),
+):
+    document, _owned_by_me = _resolve_document(db, actor_user_id, fileId)
+    query = (
+        db.query(DocumentRevision)
+        .filter(DocumentRevision.document_id == document.id)
+        .order_by(DocumentRevision.created_at.desc(), DocumentRevision.id.desc())
+    )
+    offset = 0
+    if pageToken:
+        try:
+            offset = int(pageToken)
+        except ValueError as exc:
+            raise HTTPException(400, {"message": "Invalid pageToken", "reason": "badRequest"}) from exc
+
+    revisions = query.offset(offset).limit(pageSize + 1).all()
+    has_more = len(revisions) > pageSize
+    items = revisions[:pageSize]
+    return DriveRevisionList(
+        revisions=[
+            _revision_resource(
+                revision,
+                user=db.query(User).filter(User.id == revision.user_id).first(),
+            )
+            for revision in items
+        ],
+        nextPageToken=str(offset + pageSize) if has_more else None,
+    )
+
+
+@router.get("/files/{fileId}/revisions/{revisionId}", response_model=DriveRevisionResource, response_model_exclude_none=True)
+def get_revision(
+    fileId: str,
+    revisionId: str,
+    db: Session = Depends(get_db),
+    actor_user_id: str = Depends(resolve_actor_user_id),
+):
+    document, _owned_by_me = _resolve_document(db, actor_user_id, fileId)
+    revision = (
+        db.query(DocumentRevision)
+        .filter(
+            DocumentRevision.document_id == document.id,
+            DocumentRevision.revision_id == revisionId,
+        )
+        .first()
+    )
+    if revision is None:
+        raise HTTPException(404, "Revision not found")
+    user = db.query(User).filter(User.id == revision.user_id).first()
+    return _revision_resource(revision, user=user)
 
 
 @router.get("/files/{fileId}/export")
@@ -609,3 +799,53 @@ def export_file(
         400,
         {"message": f"Unsupported export mimeType: {mimeType}", "reason": "badRequest"},
     )
+
+
+@router.post("/files/{fileId}/watch", response_model=ChannelResource, response_model_exclude_none=True)
+def watch_file(
+    fileId: str,
+    body: ChannelRequest,
+    db: Session = Depends(get_db),
+    actor_user_id: str = Depends(resolve_actor_user_id),
+):
+    _document, _owned_by_me = _resolve_document(db, actor_user_id, fileId)
+    resource_uri = f"/drive/v3/files/{fileId}"
+    channel = channel_registry.register(
+        resource_uri=resource_uri,
+        channel_id=body.id,
+        address=body.address,
+        token=body.token,
+        channel_type=body.type,
+        payload=body.payload,
+        params=body.params,
+    )
+    return ChannelResource.model_validate(channel)
+
+
+@router.post("/changes/watch", response_model=ChannelResource, response_model_exclude_none=True)
+def watch_changes(
+    body: ChannelRequest,
+    db: Session = Depends(get_db),
+    actor_user_id: str = Depends(resolve_actor_user_id),
+):
+    resource_uri = f"/drive/v3/changes?user={actor_user_id}"
+    channel = channel_registry.register(
+        resource_uri=resource_uri,
+        channel_id=body.id,
+        address=body.address,
+        token=body.token,
+        channel_type=body.type,
+        payload=body.payload,
+        params=body.params,
+    )
+    return ChannelResource.model_validate(channel)
+
+
+@router.post("/channels/stop", status_code=204)
+def stop_channel(body: ChannelRequest):
+    if not body.id or not body.resourceId:
+        raise HTTPException(400, {"message": "Missing required field: id/resourceId", "reason": "badRequest"})
+    stopped = channel_registry.stop(body.id, body.resourceId)
+    if not stopped:
+        raise HTTPException(404, "Channel not found")
+    return Response(status_code=204)

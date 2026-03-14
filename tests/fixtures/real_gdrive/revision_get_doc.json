@@ -1,0 +1,17 @@
+{
+  "kind": "drive#revision",
+  "id": "AIxLkSfixture",
+  "mimeType": "application/vnd.google-apps.document",
+  "modifiedTime": "2026-03-01T00:00:00Z",
+  "keepForever": false,
+  "size": "128",
+  "exportLinks": {
+    "text/plain": "/drive/v3/files/doc_fixture/export?mimeType=text/plain"
+  },
+  "lastModifyingUser": {
+    "kind": "drive#user",
+    "displayName": "Alex Chen",
+    "emailAddress": "alex@nexusai.com"
+  },
+  "originalFilename": "Agent Runbooks PRD.gdoc"
+}

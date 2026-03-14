@@ -292,6 +292,12 @@ class DriveFileResource(BaseModel):
     iconLink: str | None = None
     exportLinks: dict[str, str] | None = None
     ownedByMe: bool | None = None
+    shared: bool | None = None
+    version: str | None = None
+    headRevisionId: str | None = None
+    size: str | None = None
+    owners: list[dict[str, Any]] | None = None
+    lastModifyingUser: dict[str, Any] | None = None
 
 
 class DriveFileList(BaseModel):
@@ -308,6 +314,7 @@ class DrivePermissionResource(BaseModel):
     type: str = "user"
     role: str
     emailAddress: str | None = None
+    domain: str | None = None
     displayName: str | None = None
     deleted: bool | None = None
     allowFileDiscovery: bool | None = None
@@ -323,7 +330,8 @@ class DrivePermissionCreateRequest(BaseModel):
 
     type: str = "user"
     role: str = "reader"
-    emailAddress: str
+    emailAddress: str | None = None
+    domain: str | None = None
     allowFileDiscovery: bool = False
 
 
@@ -332,6 +340,26 @@ class DrivePermissionUpdateRequest(BaseModel):
 
     role: str | None = None
     allowFileDiscovery: bool | None = None
+
+
+class DriveRevisionResource(BaseModel):
+    model_config = {"exclude_none": True}
+
+    kind: Literal["drive#revision"] = "drive#revision"
+    id: str
+    mimeType: str = "application/vnd.google-apps.document"
+    modifiedTime: str
+    keepForever: bool | None = None
+    size: str | None = None
+    exportLinks: dict[str, str] | None = None
+    lastModifyingUser: dict[str, Any] | None = None
+    originalFilename: str | None = None
+
+
+class DriveRevisionList(BaseModel):
+    kind: Literal["drive#revisionList"] = "drive#revisionList"
+    revisions: list[DriveRevisionResource] = Field(default_factory=list)
+    nextPageToken: str | None = None
 
 
 class DriveStartPageToken(BaseModel):
@@ -354,3 +382,26 @@ class DriveChangeList(BaseModel):
     changes: list[DriveChangeResource] = Field(default_factory=list)
     nextPageToken: str | None = None
     newStartPageToken: str | None = None
+
+
+class ChannelRequest(BaseModel):
+    id: str | None = None
+    type: str | None = None
+    address: str | None = None
+    token: str | None = None
+    payload: bool | None = None
+    params: dict[str, Any] | None = None
+    resourceId: str | None = None
+
+
+class ChannelResource(BaseModel):
+    model_config = {"exclude_none": True}
+
+    kind: Literal["api#channel"] = "api#channel"
+    id: str
+    resourceId: str
+    resourceUri: str
+    expiration: str
+    token: str | None = None
+    payload: bool | None = None
+    params: dict[str, Any] | None = None

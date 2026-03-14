@@ -12,6 +12,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 from claw_gdoc.models import Document, User, get_session_factory
 from claw_gdoc.state.action_log import action_log
+from claw_gdoc.state.channels import channel_registry
 from claw_gdoc.state.snapshots import get_diff, get_state_dump, restore_snapshot, take_snapshot
 
 from . import changes, documents, drive, permissions
@@ -144,6 +145,7 @@ def get_profile(
 def admin_reset():
     success = restore_snapshot("initial")
     action_log.clear()
+    channel_registry.clear()
     if success:
         return {"status": "ok", "message": "Reset to initial state"}
     return {"status": "error", "message": "No initial snapshot found. Run `smolclaw-gdoc seed` first."}
@@ -159,6 +161,7 @@ def admin_seed(scenario: str = "default", seed: int = 42):
     try:
         result = seed_database(scenario=scenario, seed=seed)
         action_log.clear()
+        channel_registry.clear()
         return {"status": "ok", "scenario": scenario, **result}
     except ValueError as exc:
         raise HTTPException(400, str(exc))
@@ -227,12 +230,23 @@ def admin_task_evaluate(task_name: str):
     log_entries = action_log.get_entries()
     reward, done = task.evaluate(state, diff, log_entries)
 
-    diff_summary = {"added": 0, "updated": 0, "deleted": 0}
+    diff_summary = {
+        "added": 0,
+        "updated": 0,
+        "deleted": 0,
+        "accessibleAdded": 0,
+        "accessibleUpdated": 0,
+        "accessibleDeleted": 0,
+    }
     for user_data in diff.get("users", {}).values():
         docs = user_data.get("documents", {})
         diff_summary["added"] += len(docs.get("added", []))
         diff_summary["updated"] += len(docs.get("updated", []))
         diff_summary["deleted"] += len(docs.get("deleted", []))
+        accessible = user_data.get("accessibleDocuments", {})
+        diff_summary["accessibleAdded"] += len(accessible.get("added", []))
+        diff_summary["accessibleUpdated"] += len(accessible.get("updated", []))
+        diff_summary["accessibleDeleted"] += len(accessible.get("deleted", []))
 
     recent_actions = log_entries[-20:] if log_entries else []
     return {

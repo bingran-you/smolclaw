@@ -8,7 +8,7 @@ from uuid import uuid4
 
 from sqlalchemy.orm import Session
 
-from claw_gdoc.models import ChangeRecord, Document, DocumentPermission, User
+from claw_gdoc.models import ChangeRecord, Document, DocumentPermission, DocumentRevision, User
 
 from .access import list_document_permissions
 
@@ -46,6 +46,42 @@ def ensure_owner_permission(db: Session, document: Document) -> None:
             email_address=user.email_address,
             role="owner",
             permission_type="user",
+        )
+    )
+
+
+def _export_links(document_id: str) -> dict[str, str]:
+    base = f"/drive/v3/files/{document_id}/export?mimeType="
+    return {
+        "application/pdf": f"{base}application/pdf",
+        "application/rtf": f"{base}application/rtf",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document": (
+            f"{base}application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        ),
+        "text/html": f"{base}text/html",
+        "text/markdown": f"{base}text/markdown",
+        "text/plain": f"{base}text/plain",
+        "text/x-markdown": f"{base}text/x-markdown",
+    }
+
+
+def record_revision_snapshot(
+    db: Session,
+    document: Document,
+    *,
+    actor_user_id: str | None = None,
+) -> None:
+    db.add(
+        DocumentRevision(
+            revision_id=str(document.revision_id),
+            document_id=document.id,
+            user_id=actor_user_id or document.user_id,
+            file_size=len(document.body_text.encode("utf-8")),
+            export_links_json=json.dumps(_export_links(document.id), separators=(",", ":"), sort_keys=True),
+            title=document.title,
+            description=document.description,
+            body_text=document.body_text,
+            created_at=document.updated_at,
         )
     )
 

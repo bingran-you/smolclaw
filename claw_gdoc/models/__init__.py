@@ -4,6 +4,7 @@ from .base import Base, get_engine, get_session_factory, init_db, reset_engine
 from .change import ChangeRecord
 from .document import Document, generate_revision_id
 from .permission import DocumentPermission
+from .revision import DocumentRevision
 from .user import User
 
 __all__ = [
@@ -15,6 +16,7 @@ __all__ = [
     "ChangeRecord",
     "Document",
     "DocumentPermission",
+    "DocumentRevision",
     "generate_revision_id",
     "User",
 ]
