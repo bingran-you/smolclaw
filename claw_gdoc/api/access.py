@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from claw_gdoc.models import Document, DocumentPermission, User
 
-ROLE_RANK = {"reader": 1, "writer": 2, "owner": 3}
+ROLE_RANK = {"reader": 1, "commenter": 2, "writer": 3, "owner": 4}
 
 
 @dataclass(frozen=True)

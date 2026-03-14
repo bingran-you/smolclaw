@@ -563,8 +563,10 @@ class TestDriveBridge:
         assert watch.status_code == 200
         resource_id = watch.json()["resourceId"]
 
+        start_token = gdoc_client.get("/drive/v3/changes/startPageToken").json()["startPageToken"]
         changes_watch = gdoc_client.post(
             "/drive/v3/changes/watch",
+            params={"pageToken": start_token},
             json={"id": "changes-watch-1", "type": "web_hook", "address": "https://example.com/hooks/changes"},
         )
         assert changes_watch.status_code == 200
@@ -574,6 +576,14 @@ class TestDriveBridge:
             json={"id": "file-watch-1", "resourceId": resource_id},
         )
         assert stop.status_code == 204
+
+    def test_changes_watch_requires_page_token(self, gdoc_client):
+        resp = gdoc_client.post(
+            "/drive/v3/changes/watch",
+            json={"id": "changes-watch-missing-token", "type": "web_hook", "address": "https://example.com/hooks/changes"},
+        )
+        assert resp.status_code == 400
+        assert resp.json()["error"]["reason"] == "validationError"
 
 
 class TestSharingAndPermissions:
@@ -649,6 +659,25 @@ class TestSharingAndPermissions:
 
         missing = gdoc_multi_client.get(f"/drive/v3/files/{file_id}", headers=_headers("user2"))
         assert missing.status_code == 404
+
+    def test_anyone_permission_can_upgrade_to_commenter(self, gdoc_client):
+        create = gdoc_client.post("/drive/v3/files", json={"name": "Anyone Shared"})
+        assert create.status_code == 200
+        file_id = create.json()["id"]
+
+        share = gdoc_client.post(
+            f"/drive/v3/files/{file_id}/permissions",
+            json={"type": "anyone", "role": "reader", "allowFileDiscovery": False},
+        )
+        assert share.status_code == 200
+        permission_id = share.json()["id"]
+
+        upgrade = gdoc_client.patch(
+            f"/drive/v3/files/{file_id}/permissions/{permission_id}",
+            json={"role": "commenter"},
+        )
+        assert upgrade.status_code == 200
+        assert upgrade.json()["role"] == "commenter"
 
     def test_changes_feed_includes_permission_changes_for_collaborator(self, gdoc_multi_client):
         token = gdoc_multi_client.get(

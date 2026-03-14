@@ -363,6 +363,7 @@ class DriveRevisionList(BaseModel):
 
 
 class DriveStartPageToken(BaseModel):
+    kind: Literal["drive#startPageToken"] = "drive#startPageToken"
     startPageToken: str
 
 

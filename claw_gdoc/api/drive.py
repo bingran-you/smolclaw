@@ -825,10 +825,16 @@ def watch_file(
 @router.post("/changes/watch", response_model=ChannelResource, response_model_exclude_none=True)
 def watch_changes(
     body: ChannelRequest,
+    pageToken: str | None = Query(None),
     db: Session = Depends(get_db),
     actor_user_id: str = Depends(resolve_actor_user_id),
 ):
-    resource_uri = f"/drive/v3/changes?user={actor_user_id}"
+    if not pageToken:
+        raise HTTPException(
+            400,
+            {"message": "Required parameter 'pageToken' is missing. Provide it via query string.", "reason": "validationError"},
+        )
+    resource_uri = f"/drive/v3/changes?alt=json&pageToken={pageToken}&user={actor_user_id}"
     channel = channel_registry.register(
         resource_uri=resource_uri,
         channel_id=body.id,
